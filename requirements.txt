@@ -1,0 +1,6 @@
+# requirements.txt
+discord.py
+python-dotenv
+aiohttp-socks
+# В будущем сюда можно добавить библиотеку для HTTP-запросов, например requests
+# requests
