@@ -141,14 +141,41 @@ class QuestHistoryPaginatorView(discord.ui.View):
 # --- View для панели управления ---
 class InfoPanelView(discord.ui.View):
     def __init__(self, cog_instance): super().__init__(timeout=None); self.cog:"ControlPanelCog" = cog_instance
+
+    async def _check_ranger_role(self, interaction: discord.Interaction) -> bool:
+        """Checks if the interacting user has the 'Ranger' role."""
+        if not isinstance(interaction.user, discord.Member): # Should not happen in guild context
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return False
+        ranger_role = discord.utils.get(interaction.user.roles, name="Ranger")
+        if not ranger_role:
+            await interaction.response.send_message("⛔ You do not have the required role ('Ranger') to use this button.", ephemeral=True)
+            return False
+        return True
+
     @discord.ui.button(label="Find Wallet by Social", style=discord.ButtonStyle.success, custom_id="info_panel:find_wallet", row=0)
-    async def find_wallet_button(self, interaction: discord.Interaction, button: discord.ui.Button): await interaction.response.send_modal(FindWalletModal(self.cog))
+    async def find_wallet_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+        await interaction.response.send_modal(FindWalletModal(self.cog))
+
     @discord.ui.button(label="Task History by Wallet", style=discord.ButtonStyle.primary, custom_id="info_panel:history_by_wallet", row=1)
-    async def task_history_button(self, interaction: discord.Interaction, button: discord.ui.Button): await interaction.response.send_modal(AddressForHistoryModal(self.cog))
+    async def task_history_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+        await interaction.response.send_modal(AddressForHistoryModal(self.cog))
+
     @discord.ui.button(label="Find Socials by Wallet", style=discord.ButtonStyle.secondary, custom_id="info_panel:socials_by_wallet", row=2)
-    async def find_socials_button(self, interaction: discord.Interaction, button: discord.ui.Button): await interaction.response.send_modal(AddressForSocialsModal(self.cog))
+    async def find_socials_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+        await interaction.response.send_modal(AddressForSocialsModal(self.cog))
+
     @discord.ui.button(label="Check Balances by Wallet", style=discord.ButtonStyle.danger, custom_id="info_panel:balance_by_wallet", row=3)
-    async def check_balance_button(self, interaction: discord.Interaction, button: discord.ui.Button): await interaction.response.send_modal(BalanceCheckModal(self.cog))
+    async def check_balance_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+        await interaction.response.send_modal(BalanceCheckModal(self.cog))
 
 # --- Класс Кога ControlPanel ---
 class ControlPanelCog(commands.Cog, name="Control Panel"):
@@ -163,7 +190,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not self.snag_client: logger.warning("Snag client missing."); return
         self.bot.add_view(InfoPanelView(self)); logger.info("Persistent InfoPanelView registered."); await self._get_currency_map()
     @commands.command(name="send_info_panel")
-    @commands.has_any_role("Ranger")
+    @commands.has_any_role("Ranger") # This command already checks for Ranger role
     async def send_info_panel_command(self, ctx: commands.Context): embed = discord.Embed(title="ℹ️ Info Panel", description="Use buttons below.", color=discord.Color.purple()); await ctx.send(embed=embed, view=InfoPanelView(self)); logger.info(f"Panel sent in {ctx.channel.id}")
     @send_info_panel_command.error
     async def send_info_panel_error(self, ctx, error):
