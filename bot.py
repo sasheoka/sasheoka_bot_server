@@ -1,4 +1,4 @@
-# bot.py (Модифицированный для загрузки когов и поддержки прокси)
+# bot.py
 import discord
 from discord.ext import commands
 import os
@@ -6,131 +6,99 @@ import asyncio
 import logging
 import aiohttp
 from dotenv import load_dotenv
+# --- НОВЫЙ ИМПОРТ ---
+from utils.snag_api_client import SnagApiClient
 
-# --- Настройка логирования ---
-log_level = logging.INFO
-handler = logging.FileHandler(filename='discord_bot.log', encoding='utf-8', mode='w')
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
-handler.setFormatter(formatter)
-logging.basicConfig(level=log_level, handlers=[handler, logging.StreamHandler()])
-logger = logging.getLogger('discord_bot')
+# --- Настройка логирования (без изменений) ---
+log_level = logging.INFO; handler = logging.FileHandler(filename='discord_bot.log', encoding='utf-8', mode='a'); # Используем mode='a'
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'); handler.setFormatter(formatter)
+logging.basicConfig(level=log_level, handlers=[handler, logging.StreamHandler()]); logger = logging.getLogger('discord_bot')
 
-# --- Загрузка конфигурации ---
-load_dotenv()
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-SNAG_API_KEY = os.getenv('SNAG_API_KEY')
-# --- ИЗМЕНЕНИЕ: Загрузка URL прокси ---
+# --- Загрузка конфигурации (без изменений) ---
+load_dotenv(); DISCORD_TOKEN = os.getenv('DISCORD_TOKEN'); SNAG_API_KEY = os.getenv('SNAG_API_KEY')
 PROXY_URL = os.getenv('PROXY_URL')
+# --- НОВЫЕ ПЕРЕМЕННЫЕ для клиента API ---
+ORGANIZATION_ID = os.getenv('SNAG_ORGANIZATION_ID') # Предполагаем, что ID хранятся в .env
+WEBSITE_ID = os.getenv('SNAG_WEBSITE_ID')
 
-if DISCORD_TOKEN is None:
-    logger.critical("КРИТИЧЕСКАЯ ОШИБКА: Токен Discord (DISCORD_TOKEN) не найден в .env файле.")
-    exit()
+if DISCORD_TOKEN is None: logger.critical("CRITICAL ERROR: DISCORD_TOKEN not found in .env file."); exit()
+if SNAG_API_KEY is None: logger.warning("SNAG_API_KEY not found in .env file. API features may not work.")
+if ORGANIZATION_ID is None or WEBSITE_ID is None: logger.warning("SNAG_ORGANIZATION_ID or SNAG_WEBSITE_ID not found in .env. API features may not work.")
 
-# --- Настройка намерений (Intents) ---
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
 
-# --- ИЗМЕНЕНИЕ: Создание экземпляра бота с прокси ---
-bot_options = {
-    'command_prefix': '!',
-    'intents': intents,
-    'help_command': commands.DefaultHelpCommand(no_category = 'Команды')
-}
-# Если PROXY_URL задан в .env, добавляем его в опции
-if PROXY_URL:
-    logger.info(f"Обнаружен PROXY_URL в .env. Бот будет использовать прокси: {PROXY_URL.split('@')[-1]}") # Логируем без пароля
-    bot_options['proxy'] = PROXY_URL
-    # Для SOCKS может потребоваться аутентификация через proxy_auth,
-    # но discord.py обычно справляется с user:pass в URL.
-    # Если возникнут проблемы с SOCKS auth, понадобится настройка aiohttp.BasicAuth.
-else:
-    logger.info("PROXY_URL не найден в .env. Бот будет подключаться напрямую.")
+# --- Настройка намерений (без изменений) ---
+intents = discord.Intents.default(); intents.message_content = True; intents.members = True; intents.voice_states = True # Добавляем voice_states для Stage Tracker
 
-bot = commands.Bot(**bot_options) # Передаем словарь опций
+# --- Настройка бота (без изменений) ---
+bot_options = {'command_prefix': '!', 'intents': intents, 'help_command': commands.DefaultHelpCommand(no_category = 'Команды')}
+if PROXY_URL: logger.info(f"Proxy URL detected: {PROXY_URL.split('@')[-1]}"); bot_options['proxy'] = PROXY_URL
+else: logger.info("No proxy URL detected. Connecting directly.")
+bot = commands.Bot(**bot_options)
 
-# Сохраняем API ключ в объекте бота
-bot.snag_api_key = SNAG_API_KEY
+# --- Передаем ключ боту (для информации, клиент будет использовать свой) ---
+bot.snag_api_key = SNAG_API_KEY # Оставим для обратной совместимости или отображения
 
-# --- Событие готовности бота ---
+# --- Событие готовности бота (без изменений) ---
 @bot.event
 async def on_ready():
-    logger.info(f'Бот залогинен как {bot.user.name} (ID: {bot.user.id})')
-    logger.info(f'discord.py версия: {discord.__version__}')
-    logger.info('Бот готов к работе.')
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="за документацией"))
-    if bot.snag_api_key:
-        logger.info("SNAG_API_KEY найден и передан боту.")
-    else:
-        logger.warning("SNAG_API_KEY не найден в .env файле.")
+    logger.info(f'Logged in as {bot.user.name} (ID: {bot.user.id})'); logger.info(f'discord.py version: {discord.__version__}')
+    logger.info('Bot is ready.'); await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="за документацией"))
+    if bot.snag_api_key: logger.info("SNAG_API_KEY found.")
+    else: logger.warning("SNAG_API_KEY not found in .env file.")
+    # --- Сообщение о наличии клиента API ---
+    if hasattr(bot, 'snag_client'): logger.info("SnagApiClient initialized and attached to bot.")
+    else: logger.warning("SnagApiClient failed to initialize or attach to bot.")
 
-# --- Событие обработки ошибок команд ---
+
+# --- Событие обработки ошибок команд (без изменений) ---
 @bot.event
 async def on_command_error(ctx: commands.Context, error: commands.CommandError):
-    # ... (код обработки ошибок остается таким же, как в предыдущей версии) ...
-    if isinstance(error, commands.CommandNotFound):
-        return
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"Ошибка: не хватает аргумента `{error.param.name}`.\n"
-                     f"Используйте `!help {ctx.command.qualified_name}` для справки.")
-    # ... (другие обработчики ошибок) ...
-    else:
-        logger.error(f'Необработанная ошибка в команде {ctx.command}: {error}', exc_info=True)
-        await ctx.send("Произошла непредвиденная ошибка при выполнении команды. Администратор уведомлен.")
+    if isinstance(error, commands.CommandNotFound): return
+    elif isinstance(error, commands.MissingRequiredArgument): await ctx.send(f"Error: Missing argument `{error.param.name}`.\nUse `!help {ctx.command.qualified_name}` for help.")
+    elif isinstance(error, commands.MissingRole): await ctx.send(f"⛔ You lack the required role to use this command.")
+    elif isinstance(error, commands.ChannelNotFound): await ctx.send(f"⚠️ Could not find channel: {error.argument}")
+    elif isinstance(error, commands.BadArgument): await ctx.send(f"⚠️ Invalid argument provided.")
+    else: logger.error(f'Unhandled error in command {ctx.command}: {error}', exc_info=True); await ctx.send("An unexpected error occurred.")
 
-
-# --- Функция для загрузки когов ---
+# --- Функция для загрузки когов (без изменений) ---
 async def load_extensions(bot_instance: commands.Bot):
-    # ... (код загрузки когов остается таким же) ...
-    logger.info("Загрузка расширений (cogs)...")
-    loaded_count = 0
-    failed_count = 0
-    cog_dir = './cogs'
-    if not os.path.exists(cog_dir):
-        logger.warning(f"Папка для когов '{cog_dir}' не найдена. Коги не будут загружены.")
-        return
+    logger.info("Loading extensions (cogs)..."); loaded_count = 0; failed_count = 0; cog_dir = './cogs'
+    if not os.path.exists(cog_dir): logger.warning(f"Cogs directory '{cog_dir}' not found."); return
+    # --- ИЗМЕНЕНИЕ: Определяем порядок загрузки, если нужно ---
+    # Сначала загружаем коги с зависимостями (например, ControlPanelCog, если другие от него зависят)
+    # Затем остальные. Можно сделать список или загружать по очереди.
+    # Пока оставим как есть, но помним о возможной зависимости.
     for filename in os.listdir(cog_dir):
         if filename.endswith('.py') and filename != '__init__.py':
-            extension_name = f'cogs.{filename[:-3]}'
-            try:
-                await bot_instance.load_extension(extension_name)
-                logger.info(f'  [+] Успешно загружен: {extension_name}')
-                loaded_count += 1
-            except commands.ExtensionError as e:
-                logger.error(f'  [!] Ошибка загрузки {extension_name}: {e.__class__.__name__} - {e}', exc_info=True)
-                failed_count += 1
-            except Exception as e:
-                 logger.error(f'  [!] Неожиданная критическая ошибка при загрузке {extension_name}: {e}', exc_info=True)
-                 failed_count += 1
-    logger.info(f"Загрузка когов завершена. Успешно: {loaded_count}, Ошибки: {failed_count}.")
+            extension_name = f'cogs.{filename[:-3]}';
+            try: await bot_instance.load_extension(extension_name); logger.info(f'  [+] Loaded: {extension_name}'); loaded_count += 1
+            except commands.ExtensionError as e: logger.error(f'  [!] Failed to load {extension_name}: {e.__class__.__name__} - {e}', exc_info=True); failed_count += 1
+            except Exception as e: logger.error(f'  [!] Critical error loading {extension_name}: {e}', exc_info=True); failed_count += 1
+    logger.info(f"Cogs loading finished. Success: {loaded_count}, Failed: {failed_count}.")
 
 
 # --- Основная асинхронная функция запуска ---
 async def main():
-    async with bot:
-        await load_extensions(bot)
-        logger.info("Запуск бота...")
-        await bot.start(DISCORD_TOKEN) # Токен передается здесь
+    # --- ИЗМЕНЕНИЕ: Создаем сессию и клиент API здесь ---
+    async with aiohttp.ClientSession() as session:
+        # Создаем клиент API, передавая сессию и учетные данные
+        bot.snag_client = SnagApiClient(session, SNAG_API_KEY, ORGANIZATION_ID, WEBSITE_ID)
 
-# --- Точка входа скрипта ---
+        # Запускаем бота с созданным клиентом
+        async with bot:
+            await load_extensions(bot)
+            logger.info("Starting bot...")
+            await bot.start(DISCORD_TOKEN)
+
+# --- Точка входа скрипта (без изменений) ---
 if __name__ == "__main__":
-    # Если используете SOCKS и установили aiohttp-socks, можно добавить проверку:
-    try:
-        import aiohttp_socks
-        logger.info("Библиотека aiohttp-socks найдена.")
+    try: import aiohttp_socks; logger.info("aiohttp-socks library found.")
     except ImportError:
-        if PROXY_URL and PROXY_URL.startswith('socks'):
-             logger.warning("Обнаружен SOCKS PROXY_URL, но библиотека aiohttp-socks не установлена. Установите: pip install aiohttp-socks")
-
-    try:
-        asyncio.run(main())
-    except discord.LoginFailure:
-        logger.critical("КРИТИЧЕСКАЯ ОШИБКА: Неверный токен Discord. Проверьте .env.")
-    except KeyboardInterrupt:
-        logger.info("Бот остановлен вручную (KeyboardInterrupt).")
+        if PROXY_URL and PROXY_URL.startswith('socks'): logger.warning("SOCKS PROXY_URL detected, but aiohttp-socks is not installed. Run: pip install aiohttp-socks")
+    try: asyncio.run(main())
+    except discord.LoginFailure: logger.critical("CRITICAL ERROR: Invalid Discord token. Check .env.")
+    except KeyboardInterrupt: logger.info("Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
-        # Логируем ошибку, которая могла возникнуть при подключении через прокси
-        logger.critical(f"КРИТИЧЕСКАЯ ОШИБКА при запуске или работе бота: {e}", exc_info=True)
-        # Дополнительно проверяем на ошибки соединения, если использовался прокси
+        logger.critical(f"CRITICAL ERROR during bot startup or runtime: {e}", exc_info=True)
         if PROXY_URL and isinstance(e, (aiohttp.ClientConnectorError, aiohttp.ClientHttpProxyError, aiohttp_socks.errors.ProxyConnectionError if 'aiohttp_socks' in locals() else OSError)):
-             logger.critical(f"Возможно, проблема связана с прокси-сервером ({PROXY_URL.split('@')[-1]}) или его доступностью/настройками.")
+             logger.critical(f"Potential proxy issue ({PROXY_URL.split('@')[-1]}). Check proxy availability/settings.")
