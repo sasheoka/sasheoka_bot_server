@@ -7,7 +7,8 @@ from datetime import timezone
 import asyncio
 import math
 import re
-from typing import Dict, Any, Optional, List, Tuple # Tuple импортирован
+import os
+from typing import Dict, Any, Optional, List, Tuple
 
 from utils.snag_api_client import SnagApiClient
 
@@ -16,17 +17,17 @@ EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 
 # --- КОНСТАНТЫ ДЛЯ КОГА ---
 PAGE_LIMIT = 1000
-MAX_API_PAGES_TO_FETCH = 10
-API_REQUEST_DELAY = 0.5
+MAX_API_PAGES_TO_FETCH = 10 # Используется в некоторых методах, но не в балансе напрямую
+API_REQUEST_DELAY = 0.5 # Используется в некоторых методах
 ITEMS_PER_PAGE = 10 
 BADGES_PER_PAGE = 5 
 VIEW_TIMEOUT = 300.0
-MATCHSTICKS_CURRENCY_ID = "7f74ae35-a6e2-496a-83ea-5b2e18769560"
+MATCHSTICKS_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID", "7f74ae35-a6e2-496a-83ea-5b2e18769560")
 # ---------------------
 
 
 # --- Модальные Окна ---
-# (Без изменений)
+# (FindWalletModal, AddressForHistoryModal, AddressForSocialsModal, AddressForBadgesModal, AddressForStatsModal - без изменений)
 class FindWalletModal(discord.ui.Modal, title="Find Wallet by Social Handle"):
     discord_input = discord.ui.TextInput(label='Discord Handle (Optional)', placeholder='username#1234 or username', required=False, style=discord.TextStyle.short, row=0, max_length=100)
     twitter_input = discord.ui.TextInput(label='Twitter/X Handle (Optional)', placeholder='@username or username', required=False, style=discord.TextStyle.short, row=1, max_length=100)
@@ -38,6 +39,7 @@ class FindWalletModal(discord.ui.Modal, title="Find Wallet by Social Handle"):
             if interaction.response.is_done(): await interaction.followup.send('An error occurred in the modal.', ephemeral=True)
             else: await interaction.response.send_message('An error occurred in the modal.', ephemeral=True)
         except discord.HTTPException: pass
+
 class AddressForHistoryModal(discord.ui.Modal, title="Get Quest History by Address"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     quest_filter_input = discord.ui.TextInput(label='Quest Name Filter (Optional)', placeholder='Enter keywords...', required=False, style=discord.TextStyle.short, max_length=100, row=1)
@@ -49,6 +51,7 @@ class AddressForHistoryModal(discord.ui.Modal, title="Get Quest History by Addre
             if interaction.response.is_done(): await interaction.followup.send('An error occurred in the history modal.', ephemeral=True)
             else: await interaction.response.send_message('An error occurred in the history modal.', ephemeral=True)
         except discord.HTTPException: pass
+
 class AddressForSocialsModal(discord.ui.Modal, title="Find Socials by Wallet Address"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
@@ -59,16 +62,18 @@ class AddressForSocialsModal(discord.ui.Modal, title="Find Socials by Wallet Add
             if interaction.response.is_done(): await interaction.followup.send('An error occurred in the socials modal.', ephemeral=True)
             else: await interaction.response.send_message('An error occurred in the socials modal.', ephemeral=True)
         except discord.HTTPException: pass
+
 class BalanceCheckModal(discord.ui.Modal, title="Check All Balances by Wallet"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
-    async def on_submit(self, interaction: discord.Interaction): await interaction.response.defer(thinking=True, ephemeral=True); await self.cog.handle_balance_check_logic(interaction, self.address_input.value)
+    async def on_submit(self, interaction: discord.Interaction): await interaction.response.defer(thinking=True, ephemeral=True); await self.cog.handle_balance_check_logic(interaction, self.address_input.value) # Остается этот вызов
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         logger.error(f"BalanceCheckModal Error: {error}", exc_info=True)
         try:
             if interaction.response.is_done(): await interaction.followup.send('An error occurred in the balance modal.', ephemeral=True)
             else: await interaction.response.send_message('An error occurred in the balance modal.', ephemeral=True)
         except discord.HTTPException: pass
+
 class AddressForBadgesModal(discord.ui.Modal, title="Get User Badges by Wallet (WIP)"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
@@ -79,7 +84,8 @@ class AddressForBadgesModal(discord.ui.Modal, title="Get User Badges by Wallet (
             if interaction.response.is_done(): await interaction.followup.send('An error occurred in the badges modal.', ephemeral=True)
             else: await interaction.response.send_message('An error occurred in the badges modal.', ephemeral=True)
         except discord.HTTPException: pass
-class AddressForStatsModal(discord.ui.Modal, title="Get Quest Statistics"): # (WIP) добавлено
+
+class AddressForStatsModal(discord.ui.Modal, title="Get Quest Statistics"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
     async def on_submit(self, interaction: discord.Interaction): await interaction.response.defer(thinking=True, ephemeral=True); await self.cog.handle_quest_stats_logic(interaction, self.address_input.value)
@@ -91,8 +97,8 @@ class AddressForStatsModal(discord.ui.Modal, title="Get Quest Statistics"): # (W
         except discord.HTTPException: pass
 
 # --- Пагинаторы ---
+# (QuestHistoryPaginatorView, BadgePaginatorView - без изменений)
 class QuestHistoryPaginatorView(discord.ui.View):
-    # ... (Код QuestHistoryPaginatorView как в предыдущем ответе, с исправленным _format_datetime_static) ...
     current_page: int = 1; sep: int = ITEMS_PER_PAGE
     def __init__(self, original_interaction: discord.Interaction, all_transactions: List[Dict[str, Any]], total_matchsticks_earned: int, target_address: str):
         super().__init__(timeout=VIEW_TIMEOUT); self.original_interaction = original_interaction; self.all_transactions = all_transactions; self.total_matchsticks_earned = total_matchsticks_earned
@@ -110,9 +116,9 @@ class QuestHistoryPaginatorView(discord.ui.View):
                 field_name = f"✅ {rule_name}"; field_value = f"**Earned:** `{amount}` {currency_name_display} | **Completed:** {date_formatted}"; embed.add_field(name=field_name, value=field_value, inline=False)
         footer_text = f"Page {self.current_page} of {self.max_pages} | Total Matchsticks from listed: {self.total_matchsticks_earned}"; embed.set_footer(text=footer_text); embed.timestamp = discord.utils.utcnow(); return embed
     @staticmethod
-    def _format_datetime_static(datetime_str: Optional[str]) -> str: # ИСПРАВЛЕНИЕ ЗДЕСЬ
+    def _format_datetime_static(datetime_str: Optional[str]) -> str:
         if not datetime_str: return "Date unknown"
-        formats_to_try = ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"] # ВОССТАНОВЛЕНО
+        formats_to_try = ["%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"]
         parsed_dt = None
         for fmt in formats_to_try:
             try: dt_str_cleaned = datetime_str.replace('Z', '').split('.')[0]; dt_obj = datetime.datetime.strptime(dt_str_cleaned, '%Y-%m-%dT%H:%M:%S'); parsed_dt = dt_obj.replace(tzinfo=timezone.utc); break
@@ -146,7 +152,7 @@ class QuestHistoryPaginatorView(discord.ui.View):
             try: await self.message.edit(view=None)
             except discord.HTTPException as e: logger.error(f"Error removing view on timeout for QuestHistoryPaginatorView: {e}")
 
-class BadgePaginatorView(discord.ui.View): # Код как был
+class BadgePaginatorView(discord.ui.View): 
     current_page: int = 1; sep: int = BADGES_PER_PAGE
     def __init__(self, original_interaction: discord.Interaction, all_badges: List[Dict[str, Any]], target_address: str):
         super().__init__(timeout=VIEW_TIMEOUT); self.original_interaction = original_interaction; self.all_badges = all_badges; self.target_address = target_address
@@ -191,6 +197,7 @@ class BadgePaginatorView(discord.ui.View): # Код как был
             except discord.HTTPException as e: logger.error(f"Error removing view on timeout for BadgePaginatorView: {e}")
 
 # --- View для панели управления ---
+# (InfoPanelView - без изменений)
 class InfoPanelView(discord.ui.View):
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
     async def _check_ranger_role(self, interaction: discord.Interaction) -> bool:
@@ -211,7 +218,7 @@ class InfoPanelView(discord.ui.View):
     async def find_socials_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(AddressForSocialsModal(self.cog))
-    @discord.ui.button(label="Check Balances by Wallet", style=discord.ButtonStyle.danger, custom_id="info_panel:balance_by_wallet_v5_final_v3", row=0)
+    @discord.ui.button(label="Check Balances by Wallet", style=discord.ButtonStyle.danger, custom_id="info_panel:balance_by_wallet_v5_final_v3", row=0) # ИЗМЕНЕНА МЕТКА
     async def check_balance_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(BalanceCheckModal(self.cog))
@@ -235,7 +242,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         self._currency_cache_lock = asyncio.Lock()
         logger.info(f"Cog '{self.__class__.__name__}' loaded.")
         if not self.snag_client: logger.error(f"Main SnagApiClient not found for {self.__class__.__name__}! Some features will not work.")
-        if not self.snag_client_legacy: logger.warning(f"Legacy SnagApiClient not found for {self.__class__.__name__}! Features relying on old API will not work.")
+        if not self.snag_client_legacy: logger.warning(f"Legacy SnagApiClient not found for {self.__class__.__name__}! Legacy API features (like old balances) might not work.") # Уточнено
 
     async def cog_unload(self): logger.info(f"Cog '{self.__class__.__name__}' unloaded.")
     
@@ -243,7 +250,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
     async def on_ready_register_views(self):
         if not self.snag_client or not self.snag_client._api_key: logger.warning(f"{self.__class__.__name__}: Main Snag client missing or API key not set. InfoPanelView might not function correctly.")
         self.bot.add_view(InfoPanelView(self)); logger.info(f"{self.__class__.__name__}: Persistent InfoPanelView registered.")
-        if self.snag_client and self.snag_client._api_key: await self._get_currency_map()
+        if self.snag_client and self.snag_client._api_key: await self._get_currency_map() # Загружаем карту валют для нового API
         else: logger.warning(f"{self.__class__.__name__}: Could not pre-fetch currency map as main Snag client is not ready.")
 
     @commands.command(name="send_info_panel")
@@ -257,17 +264,33 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         else: logger.error(f"Error in send_info_panel_command: {error}", exc_info=True); await ctx.send("⚙️ An unexpected error occurred while trying to send the info panel.")
 
     async def _get_currency_map(self, force_refresh: bool = False) -> Optional[Dict[str, Dict[str, Any]]]:
-        if not self.snag_client or not self.snag_client._api_key: logger.error("Cannot get currency map: Main SnagApiClient is not available or API key missing."); return self._currency_cache
-        cache_duration = datetime.timedelta(minutes=30); now = discord.utils.utcnow()
+        # Этот метод остается для основного API, так как ID валют могут быть специфичны для него
+        if not self.snag_client or not self.snag_client._api_key: 
+            logger.error("Cannot get currency map: Main SnagApiClient is not available or API key missing.")
+            return self._currency_cache # Возвращаем старый кэш, если есть, или None
+        
+        cache_duration = datetime.timedelta(minutes=30)
+        now = discord.utils.utcnow()
+        
         async with self._currency_cache_lock:
-            if not force_refresh and self._currency_cache and self._currency_cache_time and (now - self._currency_cache_time < cache_duration): logger.debug("Using cached currency map."); return self._currency_cache
-            logger.info("Refreshing currency map from Main Snag API..."); response_data = await self.snag_client.get_currencies(limit=PAGE_LIMIT)
-            if response_data and isinstance(response_data.get("data"), list):
-                self._currency_cache = {c['id']: c for c in response_data["data"] if isinstance(c, dict) and c.get("id")}; self._currency_cache_time = now; logger.info(f"Currency map updated. Found {len(self._currency_cache)} currencies from Main API."); return self._currency_cache
-            logger.error("Failed to refresh currency map from Main API. Response was invalid or empty."); return self._currency_cache
+            if not force_refresh and self._currency_cache and self._currency_cache_time and \
+               (now - self._currency_cache_time < cache_duration):
+                logger.debug("Using cached currency map.")
+                return self._currency_cache
 
-    # ИСПРАВЛЕНИЕ: Методы должны быть частью класса (иметь self)
+            logger.info("Refreshing currency map from Main Snag API...")
+            response_data = await self.snag_client.get_currencies(limit=PAGE_LIMIT)
+            if response_data and isinstance(response_data.get("data"), list):
+                self._currency_cache = {c['id']: c for c in response_data["data"] if isinstance(c, dict) and c.get("id")}
+                self._currency_cache_time = now
+                logger.info(f"Currency map updated. Found {len(self._currency_cache)} currencies from Main API.")
+                return self._currency_cache
+            
+            logger.error("Failed to refresh currency map from Main API. Response was invalid or empty.")
+            return self._currency_cache # Возвращаем старый кэш в случае ошибки
+
     async def _find_wallet_by_social_api_filter(self, client: SnagApiClient, handle_type: str, handle_value: str) -> Optional[str]:
+        # ... (без изменений) ...
         if not client or not client._api_key: 
             logger.warning(f"Attempted to use an uninitialized or keyless API client ({getattr(client, '_client_name', 'UnknownClient')}) for social lookup.")
             return None
@@ -282,7 +305,9 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         logger.warning(f"[{getattr(client, '_client_name', '')}] Wallet not found for {handle_type} {handle_value}. Response: {str(account_data_response)[:200]}")
         return None
 
+
     async def _find_socials_by_wallet(self, client: SnagApiClient, target_address: str) -> str:
+        # ... (без изменений) ...
         if not client or not client._api_key: return "⚙️ API Client instance is not available or keyless."
         logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Finding socials for {target_address}"); 
         account_data_response = await client.get_account_by_wallet(target_address)
@@ -296,30 +321,60 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if twitter_handle and not twitter_handle.startswith('@'): twitter_handle = f"@{twitter_handle}"
         return (f"**Display Name:** `{display_name}`\n"f"**Discord:** `{discord_handle or 'Not linked'}`\n"f"**Twitter/X:** `{twitter_handle or 'Not linked'}`")
 
-    async def _get_all_wallet_balances(self, client: SnagApiClient, wallet_address: str) -> str:
-        if not client or not client._api_key: return "⚙️ API Client instance (for balances) is not available or keyless."
-        currency_map = await self._get_currency_map() # Использует self.snag_client (основной)
-        if currency_map is None: return "⚠️ Error: Could not retrieve currency info from Main API. Balances cannot be displayed."
-        logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Requesting balances for {wallet_address}"); 
+    # НОВЫЙ ВСПОМОГАТЕЛЬНЫЙ МЕТОД
+    async def _get_all_wallet_balances_from_client(self, client: SnagApiClient, wallet_address: str, system_name: str) -> str:
+        """
+        Получает и форматирует балансы для указанного кошелька через указанный API клиент.
+        """
+        if not client or not client._api_key:
+            return f"⚙️ API Client for **{system_name}** is not available or keyless."
+
+        # Карта валют используется общая, из основного клиента.
+        # Если для старого API нужна своя карта валют, логику _get_currency_map нужно будет адаптировать.
+        currency_map = await self._get_currency_map() 
+        if currency_map is None: # currency_map может быть {}, но не None, если клиент недоступен
+            # Это условие сработает, если основной self.snag_client не смог загрузить карту
+            return f"⚠️ Error: Could not retrieve currency info (used for all systems). Balances for **{system_name}** cannot be fully displayed."
+
+        logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Requesting balances for {wallet_address} for {system_name}")
         acc_resp = await client.get_all_accounts_for_wallet(wallet_address)
+
         if acc_resp and isinstance(acc_resp.get("data"), list):
             accounts = acc_resp["data"]
-            if not accounts: return f"ℹ️ No balances found for `{wallet_address}` in this loyalty system."
-            lines = [f"💰 **Balances for:** `{wallet_address}` (New Loyalty System)\n"]; found_valid_balance = False
+            if not accounts:
+                return f"ℹ️ No balances found for `{wallet_address}` in **{system_name}**."
+            
+            lines = [f"💰 **Balances for `{wallet_address}` ({system_name}):**"]
+            found_valid_balance = False
             for acc in accounts:
-                currency_id = acc.get("loyaltyCurrencyId"); amount = acc.get("amount")
-                if currency_id and amount is not None:
-                    found_valid_balance = True; currency_info = currency_map.get(currency_id); 
-                    currency_name = currency_info.get("name", "Unknown Currency") if currency_info else f"Unknown Currency (ID: {currency_id})"
-                    currency_symbol = currency_info.get("symbol", "???") if currency_info else "???"
-                    lines.append(f"- **{currency_name} ({currency_symbol}):** `{amount}`")
-            if found_valid_balance: return "\n".join(lines)
-            else: return f"ℹ️ No valid balance entries with known currencies for `{wallet_address}` in this system."
-        logger.error(f"Failed to retrieve or parse balance data for {wallet_address} using {getattr(client, '_client_name', '')}. Response: {str(acc_resp)[:200]}"); 
-        return "⚙️ Error retrieving balances from this loyalty system. Check logs."
+                currency_id = acc.get("loyaltyCurrencyId")
+                amount_val = acc.get("amount") # API возвращает amount как строку или число? В логах было строкой.
+                
+                if currency_id and amount_val is not None:
+                    amount_str = str(amount_val) # Приводим к строке на всякий случай
+                    found_valid_balance = True
+                    currency_info = currency_map.get(currency_id) # Используем общую карту валют
+                    
+                    if currency_info:
+                        currency_name = currency_info.get("name", f"Unknown Currency ID: {currency_id[:8]}")
+                        currency_symbol = currency_info.get("symbol", "")
+                        display_name = f"{currency_name} ({currency_symbol})" if currency_symbol else currency_name
+                    else:
+                        # Если валюты нет в основной карте, просто показываем ID
+                        display_name = f"Currency ID: {currency_id}"
+                        
+                    lines.append(f"- **{display_name}:** `{amount_str}`")
+            
+            if found_valid_balance:
+                return "\n".join(lines)
+            else:
+                return f"ℹ️ No valid balance entries found for `{wallet_address}` in **{system_name}** (or currencies not in main map)."
+        
+        logger.error(f"Failed to retrieve or parse balance data for {wallet_address} from {system_name} using {getattr(client, '_client_name', '')}. Response: {str(acc_resp)[:200]}")
+        return f"⚙️ Error retrieving balances from **{system_name}**. Check logs."
 
     async def handle_find_wallet_logic(self, interaction: discord.Interaction, discord_h: Optional[str], twitter_h: Optional[str]):
-        # ... (код как был, вызывает self._find_wallet_by_social_api_filter) ...
+        # ... (без изменений) ...
         discord_h = discord_h.strip() if discord_h else None; twitter_h = twitter_h.strip() if twitter_h else None
         if twitter_h and twitter_h.startswith('@'): twitter_h = twitter_h[1:]
         if not discord_h and not twitter_h: await interaction.followup.send("Please enter at least one social handle (Discord or Twitter/X).", ephemeral=True); return
@@ -336,8 +391,9 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not response_lines: await interaction.followup.send(f"Could not find wallet for {identifier_type} `{identifier_value}` in either loyalty system.", ephemeral=True)
         else: await interaction.followup.send("\n".join(response_lines), ephemeral=True)
 
+
     async def handle_find_socials_logic(self, interaction: discord.Interaction, address_val: str):
-        # ... (код как был, вызывает self._find_socials_by_wallet) ...
+        # ... (без изменений) ...
         target_address = address_val.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True); return
         logger.info(f"User {interaction.user.id} requested socials for wallet: {target_address}")
@@ -350,19 +406,46 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if len(full_response) > 1950: full_response = full_response[:1950] + "..."
         await interaction.followup.send(full_response if full_response else "No data found for this wallet in either system.", ephemeral=True)
 
+    # ОБНОВЛЕННЫЙ МЕТОД ДЛЯ ПРОВЕРКИ БАЛАНСОВ
     async def handle_balance_check_logic(self, interaction: discord.Interaction, address_val: str):
-        # ... (код как был, вызывает self._get_all_wallet_balances с self.snag_client) ...
         target_address = address_val.strip().lower()
-        if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True); return
-        if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client (New Loyalty System) is not available.", ephemeral=True); return
-        logger.info(f"User {interaction.user.id} requested all balances for wallet (Main System): {target_address}"); result_message = await self._get_all_wallet_balances(self.snag_client, target_address)
-        if len(result_message) > 1950: result_message = result_message[:1950] + "..."
-        await interaction.followup.send(result_message, ephemeral=True)
+        if not EVM_ADDRESS_PATTERN.match(target_address):
+            await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True)
+            return
+
+        logger.info(f"User {interaction.user.id} requested all balances for wallet: {target_address}")
         
-    async def _fetch_and_process_quest_transactions( # Этот метод уже был методом экземпляра
+        results = []
+        
+        # Балансы из основного (нового) API
+        if self.snag_client and self.snag_client._api_key:
+            main_balances_msg = await self._get_all_wallet_balances_from_client(self.snag_client, target_address, "New Loyalty System")
+            results.append(main_balances_msg)
+        else:
+            results.append("ℹ️ Main Loyalty System (New) API client not available.")
+            logger.warning(f"Main SnagApiClient not available for balance check of {target_address}.")
+
+        # Балансы из устаревшего (старого) API
+        if self.snag_client_legacy and self.snag_client_legacy._api_key:
+            legacy_balances_msg = await self._get_all_wallet_balances_from_client(self.snag_client_legacy, target_address, "Old Loyalty System")
+            results.append(legacy_balances_msg)
+        else:
+            results.append("ℹ️ Legacy Loyalty System (Old) API client not available.")
+            logger.warning(f"Legacy SnagApiClient not available for balance check of {target_address}.")
+            
+        full_response = "\n\n".join(results).strip()
+        if not full_response: # На случай, если оба клиента недоступны и results пуст
+            full_response = "⚙️ No API clients available to check balances."
+
+        if len(full_response) > 1950: # Ограничение длины сообщения Discord
+            full_response = full_response[:1950] + "..."
+            
+        await interaction.followup.send(full_response, ephemeral=True)
+        
+    async def _fetch_and_process_quest_transactions(
         self, client: SnagApiClient, target_address: str, quest_filter: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], str, int]:
-        # ... (код как был, использует переданный 'client') ...
+        # ... (без изменений) ...
         all_fetched_transactions: List[Dict[str, Any]] = []; last_transaction_id: Optional[str] = None; has_more_pages = True; api_page_count = 0; warning_message = ""; total_matchsticks_earned_for_history = 0
         client_name = getattr(client, '_client_name', 'SnagClient')
         logger.info(f"[{client_name}] Fetching all quest transactions for {target_address}...")
@@ -393,8 +476,9 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         logger.info(f"[{client_name}] Found {len(all_fetched_transactions)} filtered quest transactions for {target_address}.")
         return all_fetched_transactions, warning_message.strip(), total_matchsticks_earned_for_history
 
+
     async def _process_and_send_quest_history(self, interaction: discord.Interaction, target_address_str: str, quest_filter: Optional[str]):
-        # ... (код как был, вызывает self._fetch_and_process_quest_transactions) ...
+        # ... (без изменений) ...
         target_address = target_address_str.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format.", ephemeral=True); return
         if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client (New Loyalty System) is not available for quest history.", ephemeral=True); return
@@ -410,7 +494,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
 
 
     async def handle_quest_stats_logic(self, interaction: discord.Interaction, address_val: str):
-        # ... (код как был, вызывает self._fetch_and_process_quest_transactions) ...
+        # ... (без изменений) ...
         target_address = address_val.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True); return
         if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client (New Loyalty System) is not available for quest statistics.", ephemeral=True); return
@@ -448,7 +532,9 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not embed.fields and not final_content_stats: final_content_stats = "No quest data found to generate statistics."
         await interaction.followup.send(content=final_content_stats if final_content_stats else None, embed=embed, ephemeral=True)
 
-    async def handle_get_badges_logic(self, interaction: discord.Interaction, address_val: str): # Код как был
+
+    async def handle_get_badges_logic(self, interaction: discord.Interaction, address_val: str):
+        # ... (без изменений) ...
         target_address = address_val.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True); return
         if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client (New Loyalty System) is not available for badge lookup.", ephemeral=True); return
@@ -482,6 +568,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
             view = BadgePaginatorView(interaction, all_user_badges, target_address); view.message = await interaction.original_response()
             initial_page_data = await view._get_page_data(); initial_embed = await view._create_page_embed(initial_page_data)
             await interaction.followup.send(content=warning_msg if warning_msg else None, embed=initial_embed, view=view, ephemeral=True)
+
 
 # --- Обязательная функция setup ---
 async def setup(bot: commands.Bot):
