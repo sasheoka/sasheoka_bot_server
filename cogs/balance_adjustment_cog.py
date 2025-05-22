@@ -32,7 +32,7 @@ class AdjustBalanceModal(discord.ui.Modal, title="Adjust Wallet Balance"):
         required=False, style=discord.TextStyle.short, row=2
     )
     reason_input = discord.ui.TextInput(
-        label="Reason for adjustment (Optional)",
+        label="Reason (Optional) — visible in history!",
         placeholder="E.g., Manual correction, event reward, etc.",
         required=False, style=discord.TextStyle.paragraph, max_length=200, row=3 # Увеличена строка для причины
     )

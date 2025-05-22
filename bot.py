@@ -84,6 +84,11 @@ async def on_ready():
     else:
         logger.warning("Legacy SnagApiClient FAILED to initialize or is missing API key.")
 
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} slash commands.")
+    except Exception as e:
+        logger.exception(f"Failed to sync slash commands: {e}")
 
 # --- Событие обработки ошибок команд ---
 @bot.event

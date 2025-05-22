@@ -121,35 +121,40 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
         self.snag_client = getattr(bot, 'snag_client', None)
         self.snag_client_legacy = getattr(bot, 'snag_client_legacy', None)
 
-        self.target_channel_id: Optional[int] = None
         self.min_duration: Optional[datetime.timedelta] = None
         self.is_running: bool = False
 
+        # --- ЗАДАЕМ ID КАНАЛА ПРЯМО В КОДЕ ---
+        self.target_channel_id: Optional[int] = 1245830589827776545 # <--- ID ЗАДАН ЗДЕСЬ
+
         try:
-            channel_id_str = os.getenv('STAGE_CHANNEL_ID')
+            # Оставляем чтение MIN_DURATION_SECONDS из .env или задаем его тоже, если нужно
             duration_str = os.getenv('MIN_DURATION_SECONDS')
-
-            if not channel_id_str:
-                logger.error("STAGE_CHANNEL_ID not found in .env! Monitoring is not possible.")
-            else:
-                self.target_channel_id = int(channel_id_str)
-
             if not duration_str:
                 logger.warning("MIN_DURATION_SECONDS not found in .env! Using default: 600 seconds (10 minutes).")
                 self.min_duration = datetime.timedelta(seconds=600)
             else:
-                self.min_duration = datetime.timedelta(seconds=int(duration_str))
+                try:
+                    self.min_duration = datetime.timedelta(seconds=int(duration_str))
+                except ValueError:
+                    logger.error("MIN_DURATION_SECONDS in .env is not a valid number. Using default: 600 seconds.")
+                    self.min_duration = datetime.timedelta(seconds=600)
+
 
             logger.info(f"Cog '{self.__class__.__name__}' loaded.")
-            if self.target_channel_id: logger.info(f"  Target Stage Channel ID: {self.target_channel_id}")
-            if self.min_duration: logger.info(f"  Minimum Duration: {self.min_duration.total_seconds()} seconds")
+            if self.target_channel_id:
+                logger.info(f"  Target Stage Channel ID: {self.target_channel_id} (Hardcoded)")
+            else: # Этого не должно произойти, если ID задан выше, но на всякий случай
+                logger.error("  Target Stage Channel ID is NOT SET (Hardcoded value missing or None). Monitoring will not work.")
 
-        except ValueError as e:
-            logger.error(f"Error converting channel ID or duration from .env: {e}. Check your .env file.")
-            self.target_channel_id = None
+            if self.min_duration:
+                logger.info(f"  Minimum Duration: {self.min_duration.total_seconds()} seconds")
+
         except Exception as e:
             logger.exception(f"Unexpected error during {self.__class__.__name__} initialization: {e}")
-            self.target_channel_id = None
+            if self.target_channel_id is None: # Убедимся, что если target_channel_id не установлен, это будет залогировано
+                 logger.error("  Failed to initialize Target Stage Channel ID. Monitoring will not work.")
+
 
     async def cog_load(self):
         if not self.snag_client:
@@ -166,20 +171,28 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
         if self.is_running:
             logger.warning("Attempted to start tracking when it's already running.")
             return True
-        if not self.target_channel_id or not self.min_duration:
-             logger.error("Cannot start monitoring: Channel ID or minimum duration not configured.")
+        if not self.target_channel_id or not self.min_duration: # Проверяем и min_duration тоже
+             logger.error("Cannot start monitoring: Channel ID or minimum duration not configured correctly.")
              return False
 
         try:
             channel = self.bot.get_channel(self.target_channel_id)
-            if not channel: channel = await self.bot.fetch_channel(self.target_channel_id)
+            if not channel:
+                logger.info(f"Channel {self.target_channel_id} not in cache, fetching...")
+                channel = await self.bot.fetch_channel(self.target_channel_id)
             if not isinstance(channel, discord.StageChannel):
                 logger.error(f"Channel ID {self.target_channel_id} is not a Stage channel! Monitoring not started.")
                 return False
             logger.info(f"Target channel '{channel.name}' found and is a Stage channel.")
-        except discord.NotFound: logger.error(f"Channel ID {self.target_channel_id} not found! Monitoring not started."); return False
-        except discord.Forbidden: logger.error(f"No permission to access channel ID {self.target_channel_id}. Monitoring not started."); return False
-        except Exception as e: logger.exception(f"Error checking channel {self.target_channel_id}: {e}"); return False
+        except discord.NotFound:
+            logger.error(f"Channel ID {self.target_channel_id} not found! Monitoring not started.")
+            return False
+        except discord.Forbidden:
+            logger.error(f"No permission to access channel ID {self.target_channel_id}. Monitoring not started.")
+            return False
+        except Exception as e:
+            logger.exception(f"Error checking channel {self.target_channel_id}: {e}")
+            return False
 
         self.is_running = True
         logger.info(f"Stage channel monitoring {self.target_channel_id} STARTED.")
@@ -192,10 +205,10 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
 
     async def get_status_embed(self) -> discord.Embed:
         status_text = "🟢 Running" if self.is_running else "🔴 Stopped"
-        channel_name = "Not configured"
+        channel_name = "Not configured or not found"
         if self.target_channel_id:
             channel = self.bot.get_channel(self.target_channel_id)
-            channel_name = f"'{channel.name}' ({self.target_channel_id})" if channel else f"ID: {self.target_channel_id} (not in cache)"
+            channel_name = f"'{channel.name}' ({self.target_channel_id})" if channel else f"ID: {self.target_channel_id} (Not in cache/Fetch failed)"
 
         async with self._lock: users_ready_count = len(self.users_met_voice_criteria)
 
@@ -217,17 +230,17 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
         if after.channel and after.channel.id == target_id and (not before.channel or before.channel.id != target_id):
             if member.id not in self.active_sessions:
                 self.active_sessions[member.id] = discord.utils.utcnow()
-                logger.info(f"➕ StageTracker: {member.name} ({member.id}) joined.")
+                logger.info(f"➕ StageTracker: {member.name} ({member.id}) joined channel {target_id}.")
         elif before.channel and before.channel.id == target_id and (not after.channel or after.channel.id != target_id):
             if member.id in self.active_sessions:
                 join_time = self.active_sessions.pop(member.id)
                 duration = discord.utils.utcnow() - join_time
-                logger.info(f"➖ StageTracker: {member.name} ({member.id}) left. Duration: {duration}.")
-                if duration >= self.min_duration:
+                logger.info(f"➖ StageTracker: {member.name} ({member.id}) left channel {target_id}. Duration: {duration}.")
+                if self.min_duration and duration >= self.min_duration: # Проверяем, что min_duration установлено
                     async with self._lock: self.users_met_voice_criteria.add(member.id)
                     logger.info(f"👍 StageTracker: {member.name} ({member.id}) met criteria ({duration.total_seconds():.0f}s). Added to queue.")
             else:
-                 logger.warning(f"⚠️ StageTracker: {member.name} ({member.id}) left, but not found in active_sessions.")
+                 logger.warning(f"⚠️ StageTracker: {member.name} ({member.id}) left channel {target_id}, but not found in active_sessions.")
 
     async def _fetch_wallet_from_api_st(self, client, handle: str) -> Optional[str]: # Renamed to avoid conflict if merged
         """Helper to fetch wallet from a single API client."""
@@ -250,21 +263,18 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
             if not self.users_met_voice_criteria:
                 return 0, None, "No users are currently eligible for processing."
             
-            # Копируем ID для обработки и очищаем исходный сет, чтобы избежать повторной обработки
-            # если кнопка будет нажата несколько раз быстро
             user_ids_to_process = list(self.users_met_voice_criteria)
             self.users_met_voice_criteria.clear()
         
         if not self.snag_client and not self.snag_client_legacy:
             logger.error("Cannot process eligible users: No Snag API clients are available.")
-            # Возвращаем пользователей в очередь, т.к. обработка невозможна
             async with self._lock: self.users_met_voice_criteria.update(user_ids_to_process)
             return 0, None, "⚠️ Cannot process users: Snag API clients are not configured."
 
         logger.info(f"Processing {len(user_ids_to_process)} eligible users from Stage channel...")
         
         final_wallet_statuses: List[Tuple[str, str]] = []
-        api_tasks_meta = [] # To store (discord_handle, gather_task)
+        api_tasks_meta = [] 
 
         for user_id in user_ids_to_process:
             user = self.bot.get_user(user_id)
@@ -284,13 +294,13 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
 
             tasks_for_handle = []
             if self.snag_client: tasks_for_handle.append(self._fetch_wallet_from_api_st(self.snag_client, discord_handle))
-            else: tasks_for_handle.append(asyncio.sleep(0, result=None)) # Placeholder
+            else: tasks_for_handle.append(asyncio.sleep(0, result=None)) 
 
             if self.snag_client_legacy: tasks_for_handle.append(self._fetch_wallet_from_api_st(self.snag_client_legacy, discord_handle))
-            else: tasks_for_handle.append(asyncio.sleep(0, result=None)) # Placeholder
+            else: tasks_for_handle.append(asyncio.sleep(0, result=None)) 
             
             api_tasks_meta.append((discord_handle, asyncio.gather(*tasks_for_handle, return_exceptions=True)))
-            if len(api_tasks_meta) % 10 == 0: await asyncio.sleep(0.1) # Small delay
+            if len(api_tasks_meta) % 10 == 0: await asyncio.sleep(0.1) 
 
         processed_api_tasks_count = 0
         for handle, gather_task in api_tasks_meta:
@@ -306,7 +316,7 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
                 if wallet_main and wallet_legacy:
                     if wallet_main == wallet_legacy: chosen_wallet = wallet_main
                     else:
-                        chosen_wallet = wallet_main # Priority to new API
+                        chosen_wallet = wallet_main 
                         logger.info(f"Stage: For {handle} addresses DIFFER. Main: {wallet_main}, Legacy: {wallet_legacy}. Chose Main.")
                 elif wallet_main: chosen_wallet = wallet_main
                 elif wallet_legacy: chosen_wallet = wallet_legacy
@@ -317,19 +327,22 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
                 final_wallet_statuses.append((handle, "Error during API lookup"))
             processed_api_tasks_count +=1
         
-        if not final_wallet_statuses and not user_ids_to_process : # Should not happen if user_ids_to_process was not empty
+        if not final_wallet_statuses and not user_ids_to_process : 
              return 0, None, "No users were processed, or no wallet data could be retrieved."
 
-
-        file_content = f"Wallet Collection from Stage Channel: {self.target_channel_id}\n"
-        file_content += f"Processing Timestamp: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-        file_content += f"Processed Users: {len(user_ids_to_process)}\n" # Count of users we attempted to process
-        file_content += "---------------------------------------\n"
-        file_content += "Discord Handle: Wallet Address\n"
-        file_content += "---------------------------------------\n"
+        file_content_lines = [
+            f"Wallet Collection from Stage Channel: {self.target_channel_id if self.target_channel_id else 'N/A'}",
+            f"Processing Timestamp: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"Processed Users: {len(user_ids_to_process)}",
+            "---------------------------------------",
+            "Discord Handle: Wallet Address",
+            "---------------------------------------"
+        ]
 
         for handle, wallet_status in final_wallet_statuses:
-            file_content += f"{handle}: {wallet_status}\n"
+            file_content_lines.append(f"{handle}: {wallet_status}")
+        
+        file_content = "\n".join(file_content_lines)
         
         return len(user_ids_to_process), file_content, None
 
@@ -355,20 +368,12 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
             await ctx.send("⚙️ An unexpected error occurred while sending the control panel.")
 
 async def setup(bot: commands.Bot):
-    channel_id_str = os.getenv('STAGE_CHANNEL_ID')
-    if not channel_id_str:
-        logger.error("CRITICAL: STAGE_CHANNEL_ID not set in .env. StageTrackerCog will NOT be loaded.")
-        return
-    try: int(channel_id_str)
-    except ValueError:
-         logger.error("CRITICAL: STAGE_CHANNEL_ID in .env is not a number. StageTrackerCog will NOT be loaded.")
-         return
-
+    # Убрана проверка STAGE_CHANNEL_ID из .env, так как он теперь задается в коде
+    
     # Убедимся, что API клиенты есть в боте перед загрузкой кога
     if not getattr(bot, 'snag_client', None) and not getattr(bot, 'snag_client_legacy', None):
         logger.error("CRITICAL: No Snag API clients (main or legacy) found in bot. StageTrackerCog will NOT be loaded as it needs them for processing.")
         return
-
 
     cog = StageTrackerCog(bot)
     await bot.add_cog(cog)
