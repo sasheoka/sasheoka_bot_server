@@ -188,12 +188,12 @@ class PokerCog(commands.Cog, name="Poker"):
         if not wallet_address or not EVM_ADDRESS_PATTERN.match(wallet_address):
             return False, "No valid EVM wallet address (e.g., 0x...) linked to your Discord account in the Snag Loyalty System.", None
 
-        metadata = user_info.get("userMetadata", [])
-        twitter_linked = any(
-            isinstance(meta, dict) and meta.get("twitterUser") for meta in metadata
-        )
-        if not twitter_linked:
-            return False, "Please link your Twitter/X account to the Snag Loyalty System.\n https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social", wallet_address
+        #metadata = user_info.get("userMetadata", [])
+        #twitter_linked = any(
+        #    isinstance(meta, dict) and meta.get("twitterUser") for meta in metadata
+        #)
+        #if not twitter_linked:
+        #    return False, "Please link your Twitter/X account to the Snag Loyalty System.\n https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social", wallet_address
 
         min_matchsticks = self.event_configs.get(event_id, Decimal('3'))
         balance = await self._get_wallet_balance(wallet_address)
