@@ -54,7 +54,7 @@ class BalanceCheckModal(discord.ui.Modal, title="Check All Balances by Wallet"):
     async def on_submit(self, interaction: discord.Interaction): await interaction.response.defer(thinking=True, ephemeral=True); await self.cog.handle_balance_check_logic(interaction, self.address_input.value)
     async def on_error(self, interaction: discord.Interaction, error: Exception): logger.error(f"BalanceCheckModal Error: {error}", exc_info=True); await interaction.followup.send('An error occurred in the balance modal.', ephemeral=True)
 
-class AddressForBadgesModal(discord.ui.Modal, title="Get User Badges by Wallet"):
+class AddressForBadgesModal(discord.ui.Modal, title="Get User Badges (wip)"):
     address_input = discord.ui.TextInput(label='EVM Wallet Address', placeholder='0x...', required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0)
     def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
     async def on_submit(self, interaction: discord.Interaction): await interaction.response.defer(thinking=True, ephemeral=True); await self.cog.handle_get_badges_logic(interaction, self.address_input.value)
