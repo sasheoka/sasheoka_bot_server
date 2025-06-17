@@ -22,6 +22,7 @@ POKER_CHANNEL_ID = 1240671754989473862  # Replace with the actual channel ID
 EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600  # 1 hour
 INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")  # Регулярка для проверки формата инвайт-кодов
+MENTION_ROLE_ID = 1240666486968942613
 
 # Удаляем класс PokerSetupModal, так как он больше не нужен
 
@@ -194,6 +195,18 @@ class PokerCog(commands.Cog, name="Poker"):
                 await interaction.followup.send("⚠️ Could not access the poker channel.", ephemeral=True)
                 return
 
+        role_to_mention: Optional[discord.Role] = None
+        message_content_for_ping: Optional[str] = None
+
+        if interaction.guild: # Убедимся, что команда вызвана на сервере
+            role_to_mention = interaction.guild.get_role(MENTION_ROLE_ID) # Используем новую константу
+            if role_to_mention:
+                message_content_for_ping = f"{role_to_mention.mention}" # Формируем строку с упоминанием
+            else:
+                logger.warning(f"Role with ID {MENTION_ROLE_ID} not found on server {interaction.guild.id}. No role will be pinged.")
+        else:
+            logger.warning("Poker event creation called outside of a guild. Cannot ping role.")
+
         embed = discord.Embed(
             title="🃏 Poker Event 🃏",
             description=(
@@ -218,7 +231,7 @@ class PokerCog(commands.Cog, name="Poker"):
         view = PokerButtonView(self, link, expiry_time, event_id, min_matchsticks, invite_codes)
         
         try:
-            message = await channel.send(embed=embed, view=view)
+            message = await channel.send(content=message_content_for_ping, embed=embed, view=view)
             view.message = message
             logger.info(f"Poker event {event_id} created by {interaction.user.name} in channel #{channel.name} ({POKER_CHANNEL_ID}) until {expiry_time}. Min Matchsticks: {min_matchsticks}. Invite codes loaded: {len(invite_codes)}")
             self.bot.loop.create_task(self._schedule_button_removal_and_summary(message, expiry_time, interaction))

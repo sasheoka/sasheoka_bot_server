@@ -13,16 +13,21 @@ logger = logging.getLogger(__name__)
 REGIONS = ["Asia", "EU"]
 SERVERS = ["Camp", "Curvance"]
 RANGER_ROLE_NAME = "Ranger" # Роль, необходимая для запуска команд администратора
+TOURNAMENT_CHAT_CHANNEL_ID = 1378074870876737686 # ID канала, на который будет вести кнопка
 
 # --- ID ролей для регионов ---
 # УБЕДИТЕСЬ, ЧТО ЭТИ ID ВЕРНЫ ДЛЯ ВАШЕГО СЕРВЕРА
-ROLE_ID_ASIA = 1378073888692502538
-ROLE_ID_EU = 1378074142984634429
+ROLE_ID_ASIA = 1379124247707914382
+ROLE_ID_EU = 1379124386597965935
 
 REGION_ROLES = {
     "Asia": ROLE_ID_ASIA,
     "EU": ROLE_ID_EU,
 }
+
+# URL картинки для анонса турнира
+TOURNAMENT_IMAGE_URL = "https://media.discordapp.net/attachments/1376635145943253002/1378089717739946025/CAMPXCURVANCE-.png?ex=683b5590&is=683a0410&hm=8d9793a6bff142f55b09a0660ed9576ad90cd436d398382eeb167bba234c1478&=&format=webp&quality=lossless&width=1328&height=747"
+
 
 class RegistrationData:
     """Хранит данные для одной регистрации."""
@@ -43,7 +48,7 @@ class ServerSelectView(discord.ui.View):
         super().__init__(timeout=180.0)
         self.cog = cog_instance
         self.selected_region = region
-        self.message: Optional[discord.Message] = None
+        self.message: Optional[discord.Message] = None # Сообщение, которое этот View редактирует
 
         for server_name in SERVERS:
             self.add_item(ServerButton(server_name, self))
@@ -51,34 +56,31 @@ class ServerSelectView(discord.ui.View):
     async def on_timeout(self):
         if self.message:
             try:
-                await self.message.edit(content="Registration step timed out.", view=None)
+                # Убираем кнопки при таймауте
+                await self.message.edit(content="Registration step timed out. Please try again.", view=None)
             except discord.HTTPException:
                 pass
         self.stop()
 
 class ServerButton(discord.ui.Button['ServerSelectView']):
     def __init__(self, server_name: str, parent_view: ServerSelectView):
-        super().__init__(label=server_name, style=discord.ButtonStyle.secondary, custom_id=f"smash_server:{server_name.lower()}")
+        super().__init__(label=server_name, style=discord.ButtonStyle.secondary, custom_id=f"smash_server:{server_name.lower()}_v2") # Добавил _v2 к ID на всякий случай
         self.server_name = server_name
 
     async def callback(self, interaction: discord.Interaction):
+        # Откладываем ответ, так как finalize_registration будет редактировать исходное сообщение
+        # Это основной ответ на нажатие кнопки выбора сервера.
         await interaction.response.defer()
 
+        # Вызываем finalize_registration, который обновит сообщение (self.view.message)
         await self.view.cog.finalize_registration(
-            interaction,
-            self.view.message,
+            interaction, # Передаем interaction для получения user и guild
+            self.view.message, # Передаем сообщение для редактирования
             self.view.selected_region,
             self.server_name
         )
         
-        for item in self.view.children:
-            if isinstance(item, discord.ui.Button):
-                item.disabled = True
-        if self.view.message:
-            try:
-                await self.view.message.edit(view=self.view)
-            except discord.HTTPException as e:
-                 logger.error(f"Error disabling server buttons after selection: {e}")
+        # View больше не нужен, finalize_registration обновил его до view=None или нового view
         self.view.stop()
 
 
@@ -87,7 +89,7 @@ class RegionSelectView(discord.ui.View):
     def __init__(self, cog_instance: "SmashKartsCog"):
         super().__init__(timeout=180.0)
         self.cog = cog_instance
-        self.message: Optional[discord.Message] = None
+        self.message: Optional[discord.Message] = None # Сообщение, которое этот View редактирует
 
         for region_name in REGIONS:
             self.add_item(RegionButton(region_name, self))
@@ -95,34 +97,38 @@ class RegionSelectView(discord.ui.View):
     async def on_timeout(self):
         if self.message:
             try:
-                await self.message.edit(content="Registration step timed out.", view=None)
+                # Убираем кнопки при таймауте
+                await self.message.edit(content="Registration step timed out. Please try again.", view=None)
             except discord.HTTPException:
                 pass
         self.stop()
 
 class RegionButton(discord.ui.Button['RegionSelectView']):
     def __init__(self, region_name: str, parent_view: RegionSelectView):
-        super().__init__(label=region_name, style=discord.ButtonStyle.primary, custom_id=f"smash_region:{region_name.lower()}")
+        super().__init__(label=region_name, style=discord.ButtonStyle.primary, custom_id=f"smash_region:{region_name.lower()}_v2") # Добавил _v2
         self.region_name = region_name
 
     async def callback(self, interaction: discord.Interaction):
+        # Это interaction от нажатия кнопки выбора региона.
+        # Мы должны ответить на него, отредактировав сообщение и заменив View.
+        
         server_selection_view = ServerSelectView(self.view.cog, self.region_name)
         
         if self.view.message:
-            await self.view.message.edit(
+            # Редактируем исходное эфемерное сообщение, заменяя View
+            await interaction.response.edit_message(
                 content=f"Region **{self.region_name}** selected. Now, please choose your server:",
                 view=server_selection_view
             )
-            server_selection_view.message = self.view.message
+            # Передаем то же самое сообщение для редактирования следующему View
+            server_selection_view.message = await interaction.original_response() # Получаем обновленное сообщение
         else:
             logger.error("RegionButton callback: self.view.message is None, cannot edit.")
+            # Если исходное сообщение не найдено, отправляем новое (хотя это маловероятно)
             await interaction.response.send_message("An error occurred, please try registering again.", ephemeral=True)
             return
         
-        if not interaction.response.is_done():
-             await interaction.response.defer()
-        
-        self.view.stop()
+        self.view.stop() # Останавливаем текущий View
 
 
 # --- Главный View для объявления турнира (постоянный) ---
@@ -145,6 +151,7 @@ class TournamentRegisterView(discord.ui.View):
 
         region_selection_view = RegionSelectView(self.cog)
         await interaction.response.send_message("Please select your region:", view=region_selection_view, ephemeral=True)
+        # Сохраняем сообщение для эфемерного View, чтобы его можно было редактировать и завершить по таймауту
         region_selection_view.message = await interaction.original_response()
 
 
@@ -165,13 +172,15 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
 
     async def finalize_registration(self, interaction: discord.Interaction, message_to_edit: Optional[discord.Message], region: str, server: str):
         user = interaction.user
+        guild = interaction.guild
+
         if not isinstance(user, discord.Member):
             logger.warning(f"User {user.id} is not a Member object in finalize_registration. Cannot assign roles.")
             if message_to_edit:
                 try:
                     await message_to_edit.edit(
                         content="⚠️ An error occurred. Could not retrieve your server member information. Please try again or contact an admin.",
-                        view=None
+                        view=None # Убираем кнопки
                     )
                 except discord.HTTPException as e:
                      logger.error(f"Failed to edit message in finalize_registration for non-member: {e}")
@@ -184,8 +193,8 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
         role_id_to_assign = REGION_ROLES.get(region)
         role_assigned_message = ""
 
-        if role_id_to_assign and interaction.guild:
-            role = interaction.guild.get_role(role_id_to_assign)
+        if role_id_to_assign and guild:
+            role = guild.get_role(role_id_to_assign)
             if role:
                 try:
                     await user.add_roles(role, reason=f"Smash Karts Tournament Registration - Region: {region}")
@@ -199,21 +208,36 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
                     logger.error(f"HTTP error assigning role {role.name} (ID: {role.id}) to {user.name}: {e}")
             else:
                 role_assigned_message = f"\n⚠️ The role for region **{region}** (ID: {role_id_to_assign}) was not found on this server. Please contact an admin."
-                logger.error(f"Role ID {role_id_to_assign} for region {region} not found in guild {interaction.guild.id}.")
-        elif not interaction.guild:
+                logger.error(f"Role ID {role_id_to_assign} for region {region} not found in guild {guild.id}.")
+        elif not guild:
             role_assigned_message = "\n⚠️ Could not assign roles as this interaction is not in a server."
             logger.warning("Finalize_registration called without a guild context.")
         elif not role_id_to_assign:
             role_assigned_message = f"\n⚠️ No role configured for region **{region}**. Please contact an admin."
             logger.warning(f"No role ID configured for region {region} in REGION_ROLES.")
 
+        # Создаем View с кнопкой-ссылкой
+        final_view_with_link = None
+        if guild:
+            # Убедимся, что TOURNAMENT_CHAT_CHANNEL_ID - это число
+            try:
+                chat_channel_id = int(TOURNAMENT_CHAT_CHANNEL_ID)
+                channel_url = f"https://discord.com/channels/{guild.id}/{chat_channel_id}"
+                final_view_with_link = discord.ui.View(timeout=None)
+                final_view_with_link.add_item(discord.ui.Button(label="Go to Tournament Chat!", style=discord.ButtonStyle.link, url=channel_url))
+            except ValueError:
+                logger.error(f"TOURNAMENT_CHAT_CHANNEL_ID ('{TOURNAMENT_CHAT_CHANNEL_ID}') is not a valid integer. Cannot create link button.")
+        else:
+            logger.warning("Cannot create 'Go to Tournament Chat!' button because guild is not available.")
+
+
         if message_to_edit:
             try:
                 await message_to_edit.edit(
                     content=f"✅ You have successfully registered for the Smash Karts tournament!\n"
                             f"Region: **{region}**, Server: **{server}**."
-                            f"{role_assigned_message}\nGood luck! https://discord.com/channels/1161497860915875900/1378074870876737686 🏎️",
-                    view=None
+                            f"{role_assigned_message}\nGood luck! 🏎️",
+                    view=final_view_with_link # Заменяем view на новый с кнопкой-ссылкой (или None)
                 )
             except discord.HTTPException as e:
                 logger.error(f"Failed to edit final registration message: {e}")
@@ -287,19 +311,19 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
         await interaction.response.defer(ephemeral=True)
         
         embed = discord.Embed(
-            title="🏁 Smash Karts Tournament Registration is ON! 🏁",
+            title="🏁 Smash Karts Tournament Day 2 Registration is ON! 🏁",
             description=(
-                "Get your karts ready for an epic showdown! Fame, glory, and fun await!\n\n"
-                "**How to Join:**\n"
-                "1. Click the '📝 Register for Tournament' button below.\n"
-                "2. Select your **Region** (Asia or EU).\n"
-                "3. Select your **Server** (Camp or Curvance).\n"
-                "   *You will be assigned a role based on your region.*\n\n"
-                "Good luck to all participants!"
+                f"Get your karts ready for an epic showdown! Fame, glory, and fun await!\n\n"
+                f"**How to Join:**\n"
+                f"1. Click the '📝 Register for Tournament' button below.\n"
+                f"2. Select your **Region** (Asia or EU).\n"
+                f"3. Select your **Server** (Camp or Curvance).\n"
+                f"*You will be assigned a temporary role based on your region.*\n\n"
+                f"Good luck to all participants!"
             ),
             color=discord.Color.orange()
         )
-        embed.set_image(url="https://www.smashkarts.io/assets/img/features/feature-banner-2.jpg")
+        embed.set_image(url=TOURNAMENT_IMAGE_URL)
         embed.set_footer(text="Tournament registration is now open! Click below to start.")
 
         try:
@@ -329,12 +353,11 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
 
         await interaction.response.defer(ephemeral=False)
         
-        # Подсчет участников по регионам
         region_counts = Counter(reg.region for reg in self.registrations)
 
         report_lines = [f"🏆 Smash Karts Tournament Report - Concluded: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"]
         report_lines.append("--- Registrations by Region ---")
-        for region_name in REGIONS: # Используем REGIONS для гарантированного порядка
+        for region_name in REGIONS:
             count = region_counts.get(region_name, 0)
             report_lines.append(f"{region_name}: {count} participant(s)")
         report_lines.append("-------------------------------")
@@ -381,13 +404,13 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
                     if ann_msg.embeds:
                         embed = ann_msg.embeds[0]
                         embed.title = "🏁 Smash Karts Tournament Registration - ENDED 🏁"
-                        embed.description = " test "
+                        embed.description = "Check the tournament chat."
                         embed.color = discord.Color.dark_grey()
                         embed.set_footer(text="Registration is closed.")
                         await ann_msg.edit(embed=embed, view=None)
                         logger.info(f"Edited announcement message {self.announcement_message_id} to indicate tournament end.")
                     else:
-                         await ann_msg.edit(content="This tournament has ended. Registration is closed.", view=None)
+                         await ann_msg.edit(content="Registration is closed.", view=None)
             except discord.NotFound:
                 logger.warning(f"Original announcement message {self.announcement_message_id} in channel {self.announcement_channel_id} not found for editing.")
             except discord.Forbidden:
@@ -395,8 +418,8 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
             except Exception as e:
                 logger.error(f"Error editing original announcement message: {e}", exc_info=True)
         
-        removed_roles_count = await self._remove_tournament_roles(interaction.guild)
-        logger.info(f"Attempted removal of {removed_roles_count} tournament roles.")
+        #removed_roles_count = await self._remove_tournament_roles(interaction.guild)
+        #logger.info(f"Attempted removal of {removed_roles_count} tournament roles.")
 
         self.registrations.clear()
         self.announcement_message_id = None

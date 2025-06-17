@@ -21,3 +21,6 @@ discord_bot.log
 # Настройки IDE (примеры)
 .idea/
 .vscode/
+
+# Папка с данными, включая ABI
+data/
