@@ -3,5 +3,6 @@ discord.py
 python-dotenv
 aiohttp-socks
 web3
+pymongo[srv]
 # В будущем сюда можно добавить библиотеку для HTTP-запросов, например requests
 # requests
