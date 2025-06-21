@@ -20,6 +20,7 @@ logger = logging.getLogger('discord_bot')
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PROXY_URL = os.getenv('PROXY_URL')
+ADMIN_GUILD_ID_STR = os.getenv('ADMIN_GUILD_ID') # <--- ДОБАВЛЕНО
 
 # Основной (НОВЫЙ) Snag API
 MAIN_SNAG_API_KEY = os.getenv('NEW_SNAG_API_KEY')
@@ -35,6 +36,13 @@ LEGACY_WEBSITE_ID = os.getenv('OLD_SNAG_WEBSITE_ID')
 if DISCORD_TOKEN is None:
     logger.critical("CRITICAL ERROR: DISCORD_TOKEN not found in .env file. Bot cannot start.")
     exit()
+
+# <--- НАЧАЛО ИЗМЕНЕНИЙ В ПРОВЕРКАХ ---
+if not ADMIN_GUILD_ID_STR or not ADMIN_GUILD_ID_STR.isdigit():
+    logger.critical("CRITICAL ERROR: ADMIN_GUILD_ID is not set or is not a valid number in .env. Admin commands will be insecure.")
+else:
+    logger.info(f"Admin commands will be restricted to Guild ID: {ADMIN_GUILD_ID_STR}")
+# <--- КОНЕЦ ИЗМЕНЕНИЙ В ПРОВЕРКАХ ---
 
 if not all([MAIN_SNAG_API_KEY, MAIN_ORGANIZATION_ID, MAIN_WEBSITE_ID]):
     logger.warning("MAIN Snag API credentials (NEW_SNAG_API_KEY, NEW_SNAG_ORGANIZATION_ID, NEW_SNAG_WEBSITE_ID) are not fully set in .env. Main API features may fail.")
@@ -65,6 +73,47 @@ if PROXY_URL:
 else:
     logger.info("No proxy URL detected. Connecting directly.")
 bot = commands.Bot(**bot_options)
+
+
+# --- ГЛОБАЛЬНЫЕ ЛОГЕРЫ ВЗАИМОДЕЙСТВИЙ ---
+
+@bot.before_invoke
+async def log_prefix_command_usage(ctx: commands.Context):
+    """
+    Вызывается перед каждой успешной префикс-командой.
+    """
+    guild_info = f"Guild: {ctx.guild.name} ({ctx.guild.id})" if ctx.guild else "Direct Message"
+    channel_info = f"Channel: #{ctx.channel.name} ({ctx.channel.id})" if ctx.channel and hasattr(ctx.channel, 'name') else "DM Channel"
+
+    logger.info(
+        f"[PREFIX_CMD_USAGE] User: {ctx.author.name} ({ctx.author.id}) | "
+        f"Command: {ctx.command.qualified_name} | "
+        f"Message: \"{ctx.message.content}\" | "
+        f"Location: {guild_info} | {channel_info}"
+    )
+
+@bot.tree.interaction_check
+async def log_slash_command_usage(interaction: discord.Interaction) -> bool:
+    """
+    Глобальная проверка, которая логирует каждое использование слэш-команды.
+    Возвращает True, чтобы разрешить выполнение команды.
+    """
+    command_name = "N/A"
+    if interaction.command:
+        command_name = interaction.command.qualified_name
+
+    guild_info = f"Guild: {interaction.guild.name} ({interaction.guild.id})" if interaction.guild else "Direct Message"
+    channel_info = f"Channel: #{interaction.channel.name} ({interaction.channel.id})" if interaction.channel and hasattr(interaction.channel, 'name') else "DM Channel"
+
+    logger.info(
+        f"[SLASH_CMD_USAGE] User: {interaction.user.name} ({interaction.user.id}) | "
+        f"Command: /{command_name} | "
+        f"Location: {guild_info} | {channel_info}"
+    )
+    
+    # Возвращаем True, чтобы команда могла выполниться дальше.
+    return True
+
 
 # --- Событие готовности бота ---
 @bot.event

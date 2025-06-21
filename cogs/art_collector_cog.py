@@ -7,6 +7,7 @@ import asyncio
 import io
 from typing import Optional, Dict, List, Tuple
 from collections import defaultdict
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,7 @@ class ArtCollectorCog(commands.Cog, name="Art Collector"):
         logger.info(f"Art collection HTML report generated for channel {channel.id}. Contributors: {len(sorted_stats)}")
 
     @commands.command(name="send_art_panel")
-    @commands.has_any_role("Ranger")
+    @is_prefix_admin_in_guild()
     async def send_art_panel(self, ctx: commands.Context):
         embed = discord.Embed(
             title="Art Contributors Panel",

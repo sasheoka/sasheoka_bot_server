@@ -7,6 +7,7 @@ import os
 import asyncio
 import io # Для создания файла в памяти
 from typing import Dict, Set, Optional, List, Tuple # Добавлены List и Tuple
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +349,7 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
 
 
     @commands.command(name="send_stage_panel")
-    @commands.has_any_role("Ranger")
+    @is_prefix_admin_in_guild()
     async def send_stage_panel_command(self, ctx: commands.Context):
         embed = discord.Embed(
             title="Stage Channel Activity Monitoring Panel",

@@ -14,6 +14,7 @@ CURRENCIES_ENDPOINT = "/api/loyalty/currencies"
 REFERRALS_ENDPOINT = "/api/referral/users"
 RULES_ENDPOINT = "/api/loyalty/rules"
 BADGES_ENDPOINT = "/api/loyalty/badges"
+GET_USER_ENDPOINT = "/api/users"
 
 SNAG_API_KEY_HEADER = "X-API-KEY"
 logger = logging.getLogger(__name__)

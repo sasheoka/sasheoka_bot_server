@@ -7,7 +7,8 @@ import os
 import asyncio
 import io
 from typing import Dict, Optional
-from decimal import Decimal, InvalidOperation 
+from decimal import Decimal, InvalidOperation
+from utils.checks import is_prefix_admin_in_guild 
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,7 @@ class BalanceAdjustmentCog(commands.Cog, name="Balance Adjustments"):
             await interaction.followup.send(f"⚙️ An unexpected error occurred during balance adjustment: {str(e)[:1000]}", ephemeral=True)
 
     @commands.command(name="send_balance_adj_panel")
-    @commands.has_any_role("Ranger") 
+    @is_prefix_admin_in_guild() 
     async def send_balance_adj_panel_command(self, ctx: commands.Context):
         embed = discord.Embed(
             title="Wallet Balance Adjustment Panel",

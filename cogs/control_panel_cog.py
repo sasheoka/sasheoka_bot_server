@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from decimal import Decimal
 
 from utils.snag_api_client import SnagApiClient
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
@@ -305,7 +306,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         else: logger.warning(f"{self.__class__.__name__}: Could not pre-fetch currency map as main Snag client is not ready.")
 
     @commands.command(name="send_info_panel")
-    @commands.has_any_role("Ranger")
+    @is_prefix_admin_in_guild()
     async def send_info_panel_command(self, ctx: commands.Context):
         embed = discord.Embed(title="ℹ️ Snag Loyalty Info Panel", description="Use the buttons below to query Snag Loyalty System.", color=discord.Color.purple());
         await ctx.send(embed=embed, view=InfoPanelView(self)); logger.info(f"Info Panel sent by {ctx.author.name} in channel {ctx.channel.id}")
@@ -537,7 +538,7 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client (New Loyalty System) is not available for quest statistics.", ephemeral=True); return
         logger.info(f"User {interaction.user.id} requested quest statistics for wallet (Main System): {target_address}")
         all_txns, warning_msg_txn, total_matchsticks_credits, _ = await self._fetch_and_process_all_transactions(self.snag_client, target_address, name_filter=None, exclude_deleted_curr_flag=False)
-        completed_quest_executions = [tx for tx in all_txns if tx.get("direction") == "credit" and tx.get("loyaltyTransaction", {}).get("loyaltyRule", {}).get("name")]
+        completed_quest_executions = [tx for tx in all_txns if tx.get("direction") == "credit" and (tx.get("loyaltyTransaction") or {}).get("loyaltyRule", {}).get("name")]
         num_total_completed_executions = len(completed_quest_executions)
         all_available_rules_api: List[Dict[str, Any]] = []; last_rule_id: Optional[str] = None; has_more_rules_pages = True; api_rule_page_count = 0; warning_msg_rules = ""
         while has_more_rules_pages and api_rule_page_count < MAX_API_PAGES_TO_FETCH:

@@ -9,6 +9,7 @@ import logging
 import asyncio
 from typing import Optional, List, Dict, Any, Tuple
 from collections import defaultdict # Для группировки
+from utils.checks import is_admin_in_guild # <--- ИМПОРТ
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
         min_age="Optional: Minimum account age (e.g., '30d', '6m', '1y').",
         group_threshold="Minimum users per creation date to highlight as a group (default: 2)."
     )
-    @app_commands.checks.has_any_role("Ranger")
+    @is_admin_in_guild() # <--- ИЗМЕНЕНИЕ
     async def check_accounts_slash_command(
         self, 
         interaction: discord.Interaction, 
@@ -54,6 +55,7 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
         min_age: Optional[str] = None,
         group_threshold: int = 2
     ):
+        # ... (код команды без изменений) ...
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not id_file.filename.lower().endswith(".txt"):
@@ -155,7 +157,6 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
             
             await asyncio.sleep(0.35)
 
-        # Фильтрация по возрасту, если задано
         if min_age_delta:
             users_to_process = [ud for ud in fetched_users_data if ud["age_td"] >= min_age_delta]
         else:
@@ -167,16 +168,13 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
              logger.info(f"Processing aborted early for interaction {interaction.id}. No data to report.")
              return
 
-        # Группировка по дате создания (только дата, без времени)
         grouped_by_creation_date: Dict[datetime.date, List[Dict[str, Any]]] = defaultdict(list)
         for user_data_item in users_to_process:
             creation_date_only = user_data_item["created_at_dt"].date()
             grouped_by_creation_date[creation_date_only].append(user_data_item)
 
-        # Сортировка групп по дате (от старых к новым)
         sorted_grouped_dates = sorted(grouped_by_creation_date.keys())
 
-        # Подготовка строк для файла
         output_lines: List[str] = []
         output_lines.append(f"Account Age & Creation Date Grouping Report")
         output_lines.append(f"Source File: {id_file.filename} (Processed {len(unique_ids_str)} unique IDs from input)")
@@ -192,7 +190,6 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
         else:
             for creation_date in sorted_grouped_dates:
                 users_on_this_date = grouped_by_creation_date[creation_date]
-                # Сортируем пользователей внутри каждой даты по времени создания (от ранних к поздним)
                 users_on_this_date.sort(key=lambda u: u["created_at_dt"])
                 
                 date_str_formatted = creation_date.strftime('%Y-%m-%d')
@@ -221,22 +218,20 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
                     
                     output_lines.append(
                         f"  User: {user_data_item['name_tag']} (ID: {user_data_item['user_obj'].id})\n"
-                        f"    Created At (UTC): {user_data_item['created_at_dt'].strftime('%Y-%m-%d %H:%M:%S')}\n" # Точное время
+                        f"    Created At (UTC): {user_data_item['created_at_dt'].strftime('%Y-%m-%d %H:%M:%S')}\n"
                         f"    Current Age: {age_display_str}"
                     )
         
         output_lines.append("-" * 60)
         output_lines.append(f"\nTotal accounts listed in report (after filters): {total_matching_users_in_report}")
 
-
         if not_found_ids_list:
             output_lines.append(f"\n--- User IDs Not Found During Discord API Fetch ({len(not_found_ids_list)}) ---")
             for i, user_id_str_val in enumerate(not_found_ids_list):
                 output_lines.append(f"ID: {user_id_str_val}")
-                if i > 50 and len(not_found_ids_list) > 55: # Ограничим вывод, если список очень большой
+                if i > 50 and len(not_found_ids_list) > 55:
                     output_lines.append(f"...and {len(not_found_ids_list) - 50 -1} more not found IDs.")
                     break
-
 
         if failed_to_fetch_ids_dict:
             output_lines.append(f"\n--- Failed to Fetch Some User IDs ({len(failed_to_fetch_ids_dict)}) ---")
@@ -275,16 +270,22 @@ class AccountCheckerCog(commands.Cog, name="Account Age Checker"):
     @check_accounts_slash_command.error
     async def check_accounts_slash_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         logger.error(f"Error in /check_accounts command by {interaction.user.name}: {error}", exc_info=True)
-        error_message_to_user = "⚙️ An unexpected error occurred with the `/check_accounts` command."
-        
-        if isinstance(error, app_commands.MissingAnyRole):
-            error_message_to_user = "⛔ You do not have the required 'Ranger' role to use this command."
+        # --- НАЧАЛО ИЗМЕНЕНИЙ В ОБРАБОТЧИКЕ ОШИБОК ---
+        if isinstance(error, app_commands.NoPrivateMessage):
+            error_message_to_user = "⛔ This command can only be used on the official server."
+        elif isinstance(error, app_commands.CheckFailure):
+            error_message_to_user = "⛔ This command is not available on this server."
+        elif isinstance(error, app_commands.MissingRole):
+            error_message_to_user = f"⛔ You do not have the required '{error.missing_role}' role to use this command."
+        # --- КОНЕЦ ИЗМЕНЕНИЙ В ОБРАБОТЧИКЕ ОШИБОК ---
         elif isinstance(error, app_commands.CommandInvokeError):
             original_error = error.original
             if isinstance(original_error, discord.Forbidden):
                  error_message_to_user = "⚠️ The bot lacks permissions. This could be to read attachments, fetch user data, or send followup messages. Please check bot permissions."
             else:
                 error_message_to_user = f"⚙️ Command execution error: {str(original_error)[:200]}"
+        else:
+             error_message_to_user = "⚙️ An unexpected error occurred with the `/check_accounts` command."
         
         try:
             if interaction.response.is_done(): 

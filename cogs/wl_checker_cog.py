@@ -6,6 +6,7 @@ import logging
 import asyncio
 import re
 from typing import Dict, Optional, Tuple, List
+from utils.checks import is_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,7 @@ class WlCheckerCog(commands.Cog, name="WL Checker"):
             await self._save_wl_data()
             
     @app_commands.command(name="send_wl_panel", description="Sends the WL checker panel.")
-    @app_commands.checks.has_any_role(ADMIN_ROLE_NAME)
+    @is_admin_in_guild()
     async def send_wl_panel_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:

@@ -7,6 +7,7 @@ import os
 import asyncio
 import io
 from typing import Dict, Set, Optional, Tuple, List, Union
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +316,7 @@ class TextCollectorCog(commands.Cog, name="Text Chat Collector"):
 
 
     @commands.command(name="send_textcollector_panel")
-    @commands.has_any_role("Ranger") 
+    @is_prefix_admin_in_guild() 
     async def send_textcollector_panel_command(self, ctx: commands.Context):
         embed = discord.Embed(
             title="Text Chat Address Collector Panel", # MODIFIED

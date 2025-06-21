@@ -6,17 +6,20 @@ import logging
 import asyncio
 import aiohttp
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
+
+from utils.snag_api_client import SnagApiClient, GET_USER_ENDPOINT
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
 # Константы
-TEMP_ACCESS_DURATION_MINUTES = 30  # Длительность временного доступа в минутах
-VERIFICATION_CHANNEL_ID = 1307784438767161385  # Замените на ID канала, где будет кнопка
-TARGET_CHANNEL_ID = 1384466812766257193  # Замените на ID канала, куда дается доступ
-TELEGRAM_GROUP_ID = -1002193560609  # Замените на ID Telegram-группы (обычно начинается с -100)
+TEMP_ACCESS_DURATION_MINUTES = 30
+VERIFICATION_CHANNEL_ID = 1307784438767161385
+TARGET_CHANNEL_ID = 1384466812766257193
+TELEGRAM_GROUP_ID = -1002193560609
 
 class TelegramVerificationView(discord.ui.View):
     def __init__(self, cog_instance: "TelegramVerificationCog"):
@@ -33,7 +36,7 @@ class TelegramVerificationView(discord.ui.View):
             await interaction.followup.send("⚙️ An unexpected error occurred during verification.", ephemeral=True)
 
 class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
-    """Cog to verify Telegram group membership and grant temporary Discord channel access."""
+    """Cog to verify Telegram group membership using userId and grant temporary Discord channel access."""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         load_dotenv()
@@ -65,55 +68,90 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             await interaction.followup.send("⚠️ This command can only be used in a server.", ephemeral=True)
             return
 
-        # Получаем Telegram-username из профиля пользователя в Discord
         user = interaction.user
         discord_handle = user.name if user.discriminator == '0' else f"{user.name}#{user.discriminator}"
-        telegram_username = None
 
-        # Проверяем, указан ли Telegram-username в профиле через Snag API
-        snag_client = getattr(self.bot, 'snag_client', None)
-        if snag_client and snag_client._api_key:
-            account_data = await snag_client.get_account_by_social("discordUser", discord_handle)
-            if account_data and isinstance(account_data.get("data"), list) and account_data["data"]:
-                user_info = account_data["data"][0].get("user", {})
-                telegram_username = user_info.get("telegramUser")
-                logger.debug(f"Found Telegram username {telegram_username} for Discord user {discord_handle} via Snag API.")
+        snag_client: Optional[SnagApiClient] = getattr(self.bot, 'snag_client', None)
+        if not snag_client or not snag_client._api_key:
+            await interaction.followup.send("⚠️ Snag API client is not configured.", ephemeral=True)
+            return
 
-        if not telegram_username:
+        account_data = await snag_client.get_account_by_social("discordUser", discord_handle)
+        if not account_data or not isinstance(account_data.get("data"), list) or not account_data["data"]:
             await interaction.followup.send(
-                "⚠️ Your Telegram username is not linked in the Snag Loyalty System. "
+                "⚠️ Your Discord account is not linked in the Snag Loyalty System. "
                 "Please link it at https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social",
                 ephemeral=True
             )
             return
 
-        # Проверяем членство в Telegram-группе
+        user_info = account_data["data"][0].get("user", {})
+        wallet_address = user_info.get("walletAddress")
+        if not wallet_address:
+            await interaction.followup.send(
+                "⚠️ No wallet address linked to your Discord account in the Snag Loyalty System.",
+                ephemeral=True
+            )
+            return
+
+        user_data_response = await snag_client._make_request(
+            method="GET",
+            endpoint=GET_USER_ENDPOINT,
+            params={"walletAddress": wallet_address, "limit": 1}
+        )
+        if not user_data_response or not isinstance(user_data_response.get("data"), list) or not user_data_response["data"]:
+            await interaction.followup.send(
+                "⚠️ Could not retrieve user data from Snag API. Please ensure your account is properly linked.",
+                ephemeral=True
+            )
+            logger.error(f"No user data found for wallet {wallet_address} via /api/users.")
+            return
+
+        user_data = user_data_response["data"][0]
+        telegram_user_id = None
+
+        user_metadata_list = user_data.get("userMetadata")
+        if user_metadata_list and isinstance(user_metadata_list, list) and user_metadata_list:
+            telegram_user_id = user_metadata_list[0].get("telegramUserId")
+
+        if not telegram_user_id:
+            await interaction.followup.send(
+                "⚠️ Your Telegram user ID is not linked in the Snag Loyalty System. "
+                "Please link it at https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social",
+                ephemeral=True
+            )
+            return
+
         try:
             async with self.session.get(
                 f"{self.telegram_api_url}/getChatMember",
-                params={"chat_id": TELEGRAM_GROUP_ID, "user_id": telegram_username}
+                params={"chat_id": TELEGRAM_GROUP_ID, "user_id": telegram_user_id}
             ) as response:
                 result = await response.json()
-                logger.debug(f"Telegram API response for {telegram_username}: {result}")
+                logger.warning(f"Telegram API response for telegramUserId {telegram_user_id}: {result}")
 
                 if not result.get("ok"):
                     await interaction.followup.send(
-                        "⚠️ Failed to verify Telegram membership. Please ensure your Telegram username is correct.",
+                        "⚠️ Failed to verify Telegram membership. Please ensure your Telegram account is linked correctly.",
                         ephemeral=True
                     )
                     return
 
                 status = result["result"].get("status")
-                if status in ["member", "administrator", "creator"]:
-                    # Пользователь в группе, даем доступ
+                if status in ["administrator", "creator", "member"]:
                     await self.grant_channel_access(interaction)
                 else:
-                    await interaction.followup.send(
-                        f"⚠️ You are not a member of the specified Telegram group (status: {status}).",
-                        ephemeral=True
-                    )
+                    # Дополнительная проверка is_member, если статус не соответствует
+                    is_member = result["result"].get("is_member", False)
+                    if is_member:
+                        await self.grant_channel_access(interaction)
+                    else:
+                        await interaction.followup.send(
+                            f"⚠️ You are not a member of the Campfire Circle.",
+                            ephemeral=True
+                        )
         except aiohttp.ClientError as e:
-            logger.error(f"Telegram API request failed for {telegram_username}: {e}", exc_info=True)
+            logger.error(f"Telegram API request failed for telegramUserId {telegram_user_id}: {e}", exc_info=True)
             await interaction.followup.send("⚠️ Failed to contact Telegram API. Please try again later.", ephemeral=True)
 
     async def grant_channel_access(self, interaction: discord.Interaction):
@@ -137,14 +175,12 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
                 await interaction.followup.send("⚠️ Bot lacks permission to access the target channel.", ephemeral=True)
                 return
 
-        # Проверяем, есть ли уже доступ
         overwrite = target_channel.overwrites_for(user)
         if overwrite.view_channel is True:
-            await interaction.followup.send("ℹ You already have access to the target channel.", ephemeral=True)
+            await interaction.followup.send("⚠️ You already have access to the target channel.", ephemeral=True)
             logger.info(f"User {user.name} already has access to channel {TARGET_CHANNEL_ID}.")
             return
 
-        # Даем временный доступ
         try:
             await target_channel.set_permissions(
                 user,
@@ -158,7 +194,6 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
                 ephemeral=True
             )
 
-            # Планируем удаление доступа
             self.bot.loop.create_task(
                 self.revoke_channel_access(target_channel, user, TEMP_ACCESS_DURATION_MINUTES)
             )
@@ -189,7 +224,7 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             logger.error(f"Failed to revoke permissions for channel {channel.id}: {e}", exc_info=True)
 
     @commands.command(name="send_telegram_verify_panel")
-    @commands.has_any_role("Ranger")
+    @is_prefix_admin_in_guild()
     async def send_telegram_verify_panel(self, ctx: commands.Context):
         channel = self.bot.get_channel(VERIFICATION_CHANNEL_ID)
         if not channel or not isinstance(channel, discord.TextChannel):
@@ -211,11 +246,11 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
         embed = discord.Embed(
             title="🔒 Telegram Group Verification",
             description=(
-                "Click the button below to verify your membership in the specified Telegram group.\n"
+                "Click the button below to verify your membership in Campfire Circle.\n"
                 "If you are a member, you will gain temporary access to a private Discord channel.\n\n"
                 "**Requirements**:\n"
-                "- Your Telegram username must be linked in the Snag Loyalty System.\n"
-                "- You must be a member of the specified Telegram group."
+                "- Your Telegram account must be linked in the Snag Loyalty System.\n"
+                "- You must be a member of the Campfire Cirle."
             ),
             color=discord.Color.blue(),
             timestamp=datetime.now(tz=timezone.utc)

@@ -8,6 +8,7 @@ import asyncio
 import io
 from typing import Dict, Set, Optional, List, Tuple, Union, Any 
 from decimal import Decimal, InvalidOperation 
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +436,7 @@ class ProgressTransferCog(commands.Cog, name="Progress Transfer"):
             logger.error(f"Failed to send final report to {report_channel_id}: {e_final_report}", exc_info=True)
 
     @commands.command(name="send_transfer_panel")
-    @commands.has_any_role("Ranger") 
+    @is_prefix_admin_in_guild() 
     async def send_transfer_panel_command(self, ctx: commands.Context):
         embed = discord.Embed(title="Wallet Progress Transfer Panel", color=discord.Color.red(),
             description="Initiate progress transfer. Sensitive operation, use with caution.")

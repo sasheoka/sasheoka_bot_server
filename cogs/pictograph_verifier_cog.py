@@ -8,6 +8,7 @@ import json
 from typing import List, Optional, Any
 
 from web3 import Web3, HTTPProvider
+from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ class PictographVerifierCog(commands.Cog, name="Pictograph Verifier"):
         logger.info(f"Cog '{self.__class__.__name__}' loaded and persistent view registered.")
 
     @commands.command(name="send_pictograph_panel")
-    @commands.has_any_role("Ranger")
+    @is_prefix_admin_in_guild()
     async def send_pictograph_panel_command(self, ctx: commands.Context):
         if not self.is_web3_configured or not self.snag_client:
             await ctx.send("⚠️ The verifier service is not properly configured. Please check logs.")

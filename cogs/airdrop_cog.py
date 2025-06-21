@@ -9,13 +9,12 @@ import re
 import asyncio
 import json
 from typing import List, Optional, Any
-
 from web3 import Web3, HTTPProvider
-# Явный импорт PoA middleware убран, т.к. web3.py v7+ может справляться автоматически
-# или потребует более специфичной настройки, если возникнут проблемы с ExtraDataLengthError.
+from utils.checks import is_admin_in_guild # <--- ИМПОРТ
 
 logger = logging.getLogger(__name__)
 
+# ... (остальной код файла без изменений) ...
 # --- Загрузка конфигурации ---
 RPC_URL = os.getenv('RPC_URL')
 BOT_WALLET_ADDRESS = os.getenv('BOT_WALLET_ADDRESS')
@@ -75,13 +74,6 @@ class AirdropCog(commands.Cog, name="NFT Airdrop"):
 
         try:
             self.w3 = Web3(HTTPProvider(RPC_URL))
-            
-            # Если возникнут ошибки типа ExtraDataLengthError для PoA сетей,
-            # потребуется добавить соответствующий middleware для web3 v7, например:
-            # from web3.middleware.proof_of_authority import extra_data_to_poa_middleware 
-            # или from web3.middleware import construct_fixture_middleware (в зависимости от версии и доступности)
-            # self.w3.middleware_onion.inject(extra_data_to_poa_middleware, layer=0)
-            # Пока что оставляем без явного PoA middleware, т.к. последняя попытка импорта не удалась.
 
             if not self.w3.is_connected(): # type: ignore
                 logger.error(f"{self.__class__.__name__}: Failed to connect to Web3: {RPC_URL}.")
@@ -116,11 +108,12 @@ class AirdropCog(commands.Cog, name="NFT Airdrop"):
         token_id="Token ID.", amount_per_recipient="Amount per recipient.",
         recipients_file=".txt file with addresses.", data_hex="Optional hex data (0x...)."
     )
-    @app_commands.checks.has_any_role("Ranger")
+    @is_admin_in_guild() # <--- ИЗМЕНЕНИЕ
     async def airdropnft_slash_command(
         self, interaction: discord.Interaction, token_id: int, amount_per_recipient: int,
         recipients_file: discord.Attachment, data_hex: Optional[str] = None
     ):
+        # ... (код команды без изменений) ...
         if not self.is_web3_configured or not self.w3 or not self.contract:
             await interaction.response.send_message("⚠️ Airdrop service not configured.", ephemeral=True)
             return
@@ -214,18 +207,12 @@ class AirdropCog(commands.Cog, name="NFT Airdrop"):
                 self.w3.eth.account.sign_transaction, built_tx, str(BOT_WALLET_PRIVATE_KEY) # type: ignore
             )
             
-            # Получаем байты хеша транзакции
             tx_hash_bytes = await asyncio.to_thread(self.w3.eth.send_raw_transaction, signed_tx.raw_transaction) # type: ignore
-            # Преобразуем в строку hex
             tx_hash_hex_string = tx_hash_bytes.hex()
             
-            # Формируем хеш для URL, гарантируя наличие "0x"
-            if not tx_hash_hex_string.startswith('0x'):
-                tx_hash_for_url = '0x' + tx_hash_hex_string
-            else:
-                tx_hash_for_url = tx_hash_hex_string
+            if not tx_hash_hex_string.startswith('0x'): tx_hash_for_url = '0x' + tx_hash_hex_string
+            else: tx_hash_for_url = tx_hash_hex_string
 
-            # Для отображения пользователю в `Hash: ...` также используем версию с "0x"
             display_tx_hash = tx_hash_for_url 
 
             logger.info(f"TX sent to Camp Network BaseCAMP. Hash: {display_tx_hash}")
@@ -233,8 +220,8 @@ class AirdropCog(commands.Cog, name="NFT Airdrop"):
             await interaction.followup.send(
                 f"✅ Airdrop transaction sent to Camp Network BaseCAMP!\n"
                 f"Recipients: {len(unique_valid_recipients)}, Token ID: {token_id}, Amount: {amount_per_recipient}\n"
-                f"Transaction Hash: `{display_tx_hash}`\n" # Используем display_tx_hash
-                f"View on explorer: {self.block_explorer_tx_prefix}{tx_hash_for_url}\n\n" # Используем tx_hash_for_url
+                f"Transaction Hash: `{display_tx_hash}`\n"
+                f"View on explorer: {self.block_explorer_tx_prefix}{tx_hash_for_url}\n\n"
                 f"Please monitor the transaction status on the block explorer. It may take some time to be confirmed.",
                 ephemeral=True
             )
@@ -249,14 +236,22 @@ class AirdropCog(commands.Cog, name="NFT Airdrop"):
 
     @airdropnft_slash_command.error
     async def airdropnft_slash_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        msg_to_send = "⚙️ Unexpected error."
-        if isinstance(error, app_commands.MissingAnyRole): msg_to_send = "⛔ No 'Ranger' role."
+        # --- НАЧАЛО ИЗМЕНЕНИЙ В ОБРАБОТЧИКЕ ОШИБОК ---
+        if isinstance(error, app_commands.NoPrivateMessage):
+            msg_to_send = "⛔ This command can only be used on the official server."
+        elif isinstance(error, app_commands.CheckFailure):
+            msg_to_send = "⛔ This command is not available on this server."
+        elif isinstance(error, app_commands.MissingRole):
+            msg_to_send = f"⛔ You do not have the required '{error.missing_role}' role."
+        # --- КОНЕЦ ИЗМЕНЕНИЙ В ОБРАБОТЧИКЕ ОШИБОК ---
         elif isinstance(error, app_commands.CommandInvokeError):
             logger.error(f"Invoke error /airdropnft by {interaction.user.name}: {error.original}", exc_info=True)
             oe_str = str(error.original)
             if "insufficient funds" in oe_str.lower(): msg_to_send = "❌ Error: Insufficient funds for gas."
             else: msg_to_send = f"⚙️ Invoke error: {oe_str[:300]}..."
-        else: logger.error(f"Unhandled error /airdropnft by {interaction.user.name}: {error}", exc_info=True)
+        else:
+            logger.error(f"Unhandled error /airdropnft by {interaction.user.name}: {error}", exc_info=True)
+            msg_to_send = "⚙️ Unexpected error."
         try:
             if not interaction.response.is_done(): await interaction.response.send_message(msg_to_send, ephemeral=True)
             else: await interaction.followup.send(msg_to_send, ephemeral=True)

@@ -1,5 +1,4 @@
 # cogs/poker_cog.py
-# ... (предыдущие импорты остаются без изменений)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -11,20 +10,19 @@ import re
 import csv
 from typing import Dict, List, Tuple, Optional
 from decimal import Decimal
-
 from utils.snag_api_client import SnagApiClient
+from utils.checks import is_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
 # Constants
 MATCHSTICKS_CURRENCY_ID = "7f74ae35-a6e2-496a-83ea-5b2e18769560"
-POKER_CHANNEL_ID = 1240671754989473862  # Replace with the actual channel ID
+POKER_CHANNEL_ID = 1240671754989473862
 EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
-PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600  # 1 hour
-INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")  # Регулярка для проверки формата инвайт-кодов
+PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
+INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
 MENTION_ROLE_ID = 1240666486968942613
 
-# Удаляем класс PokerSetupModal, так как он больше не нужен
 
 class PokerLoginModal(discord.ui.Modal, title="Enter PokerNow Login"):
     poker_login = discord.ui.TextInput(
@@ -112,30 +110,35 @@ class PokerCog(commands.Cog, name="Poker"):
 
     async def _check_user_eligibility(self, user: discord.User, event_id: int) -> Tuple[bool, str, Optional[str]]:
         if not self.snag_client or not self.snag_client._api_key:
+            logger.error(f"Eligibility check failed for '{user.name}' (Event {event_id}): SnagApiClient is not configured.")
             return False, "API client not configured. Please contact an admin.", None
 
         discord_handle = user.name if user.discriminator == '0' else f"{user.name}#{user.discriminator}"
         account_data: Optional[dict] = await self.snag_client.get_account_by_social("discordUser", discord_handle)
 
         if not account_data or not isinstance(account_data.get("data"), list) or not account_data["data"]:
+            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Snag API found no linked Discord account.")
             return False, "Please link your Discord account to the Snag Loyalty System. If already linked, try re-linking.\n https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social", None
 
         user_info = account_data["data"][0].get("user", {})
         wallet_address = user_info.get("walletAddress")
         if not wallet_address or not EVM_ADDRESS_PATTERN.match(wallet_address):
+            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Account found, but no valid EVM wallet is linked.")
             return False, "No valid EVM wallet address (e.g., 0x...) linked to your Discord account in the Snag Loyalty System.", None
 
         min_matchsticks = self.event_configs.get(event_id, Decimal('3'))
         balance = await self._get_wallet_balance(wallet_address)
         if balance < min_matchsticks:
+            logger.info(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Insufficient Matchsticks balance. Required: {min_matchsticks}, Has: {balance}, Wallet: {wallet_address}")
             return False, f"Insufficient Matchsticks balance. You need at least {min_matchsticks}, but have {balance}.", wallet_address
 
+        logger.info(f"Eligibility check PASSED for '{discord_handle}' (Event {event_id}). Wallet: {wallet_address}, Balance: {balance}")
         return True, "", wallet_address
 
     async def process_poker_request(self, interaction: discord.Interaction, poker_login: str, link: str, event_id: int):
         async with self._lock:
             eligible, error_message, wallet_address = await self._check_user_eligibility(interaction.user, event_id)
-            discord_handle = interaction.user.name if interaction.user.discriminator == '0' else f"{interaction.user.name}#{user.discriminator}"
+            discord_handle = interaction.user.name if interaction.user.discriminator == '0' else f"{interaction.user.name}#{interaction.user.discriminator}"
 
             if not eligible:
                 await interaction.followup.send(f"⚠️ {error_message}", ephemeral=True)
@@ -198,10 +201,10 @@ class PokerCog(commands.Cog, name="Poker"):
         role_to_mention: Optional[discord.Role] = None
         message_content_for_ping: Optional[str] = None
 
-        if interaction.guild: # Убедимся, что команда вызвана на сервере
-            role_to_mention = interaction.guild.get_role(MENTION_ROLE_ID) # Используем новую константу
+        if interaction.guild:
+            role_to_mention = interaction.guild.get_role(MENTION_ROLE_ID)
             if role_to_mention:
-                message_content_for_ping = f"{role_to_mention.mention}" # Формируем строку с упоминанием
+                message_content_for_ping = f"{role_to_mention.mention}"
             else:
                 logger.warning(f"Role with ID {MENTION_ROLE_ID} not found on server {interaction.guild.id}. No role will be pinged.")
         else:
@@ -374,6 +377,7 @@ class PokerCog(commands.Cog, name="Poker"):
         min_matchsticks="Minimum Matchsticks required to join",
         csv_file="CSV file containing invite codes"
     )
+    @is_admin_in_guild()
     async def poker_slash_command(
         self,
         interaction: discord.Interaction,
@@ -382,18 +386,21 @@ class PokerCog(commands.Cog, name="Poker"):
         min_matchsticks: float,
         csv_file: discord.Attachment
     ):
+        
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
         if not self.snag_client or not self.snag_client._api_key:
-            await interaction.response.send_message("⚠️ Snag API client is not configured. Please contact an administrator.", ephemeral=True)
+            # FIX: Must use followup.send after a defer.
+            await interaction.followup.send("⚠️ Snag API client is not configured. Please contact an administrator.", ephemeral=True)
             return
 
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        # FIX: Removed the redundant defer call that caused the InteractionResponded error.
+        # await interaction.response.defer(thinking=True, ephemeral=True)
 
-        # Валидация ссылки
         if not re.match(r"^https?://[^\s/$.?#].*\S$", link):
             await interaction.followup.send("⚠️ Invalid link format. Please provide a valid URL.", ephemeral=True)
             return
 
-        # Валидация времени окончания
         try:
             expiry_time = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
             if expiry_time <= discord.utils.utcnow():
@@ -403,7 +410,6 @@ class PokerCog(commands.Cog, name="Poker"):
             await interaction.followup.send("⚠️ Invalid time format. Use YYYY-MM-DD HH:MM (UTC).", ephemeral=True)
             return
 
-        # Валидация Matchsticks
         try:
             min_matchsticks_val = Decimal(str(min_matchsticks))
             if min_matchsticks_val <= 0:
@@ -413,7 +419,6 @@ class PokerCog(commands.Cog, name="Poker"):
             await interaction.followup.send("⚠️ Invalid Matchsticks value. Please enter a number.", ephemeral=True)
             return
 
-        # Проверка и обработка CSV файла
         if not csv_file.filename.endswith('.csv'):
             await interaction.followup.send("⚠️ File must be a .csv file.", ephemeral=True)
             return
@@ -430,7 +435,6 @@ class PokerCog(commands.Cog, name="Poker"):
             await interaction.followup.send("⚠️ Failed to read the CSV file.", ephemeral=True)
             return
 
-        # Создаем событие
         try:
             await self.create_poker_event(interaction, link, expiry_time, min_matchsticks_val, invite_codes)
             await interaction.followup.send("✅ Poker event created successfully.", ephemeral=True)
@@ -440,20 +444,26 @@ class PokerCog(commands.Cog, name="Poker"):
 
     @poker_slash_command.error
     async def poker_slash_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        # FIX: The entire error handler has been rewritten for correctness.
+        # Since the main command always defers, we must always use followup.send().
+        
+        msg_to_send = "⚙️ An unexpected error occurred while processing the poker command."
+        
         if isinstance(error, app_commands.MissingAnyRole):
-            await interaction.response.send_message("⛔ You do not have the required 'Ranger' role to use this command.", ephemeral=True)
+            msg_to_send = "⛔ You do not have the required 'Ranger' role to use this command."
         elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.Forbidden):
-            await interaction.response.send_message("⚠️ I don't have permissions to perform this action here. Please check my channel permissions.", ephemeral=True)
+            msg_to_send = "⚠️ I don't have permissions to perform this action here. Please check my channel permissions."
         else:
             logger.error(f"Error in /poker command invocation by {interaction.user.name}: {error}", exc_info=True)
-            message_content = "⚙️ An unexpected error occurred while processing the poker command."
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(message_content, ephemeral=True)
-                else:
-                    await interaction.response.send_message(message_content, ephemeral=True)
-            except discord.HTTPException:
-                logger.error(f"Failed to send error response for /poker command by {interaction.user.name}")
+            
+        try:
+            # We use followup.send() because the interaction has already been deferred.
+            # This handles all error cases correctly with a single response.
+            await interaction.followup.send(msg_to_send, ephemeral=True)
+        except discord.HTTPException as e:
+            # This will catch errors if we fail to send the followup message itself,
+            # for example, if the interaction token has expired.
+            logger.error(f"Failed to send error response for /poker command by {interaction.user.name}: {e}")
 
 async def setup(bot: commands.Bot):
     snag_api_client = getattr(bot, 'snag_client', None)
