@@ -23,4 +23,4 @@ discord_bot.log
 .vscode/
 
 # Папка с данными, включая ABI
-data/
+# data/
