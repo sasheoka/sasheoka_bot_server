@@ -29,9 +29,8 @@ def is_admin_in_guild():
         if not isinstance(interaction.user, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_ID)
-        if ranger_role is None:
-            raise app_commands.MissingRole(RANGER_ROLE_ID)
+        if not any(role.id == RANGER_ROLE_ID for role in interaction.user.roles):
+            raise app_commands.MissingRole(str(RANGER_ROLE_ID))
 
         return True
     
@@ -56,9 +55,8 @@ def is_prefix_admin_in_guild():
         if not isinstance(ctx.author, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(ctx.author.roles, name=RANGER_ROLE_ID)
-        if ranger_role is None:
-            raise commands.MissingRole(RANGER_ROLE_ID)
+        if not any(role.id == RANGER_ROLE_ID for role in ctx.author.roles):
+            raise commands.MissingRole(str(RANGER_ROLE_ID))
             
         return True
 

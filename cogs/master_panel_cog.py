@@ -16,15 +16,9 @@ from cogs.find_rule_id_cog import RuleNameInputModal
 from cogs.quest_completer_cog import QuestCompleteModal
 
 from utils.checks import is_admin_in_guild
+from utils.checks import is_admin_in_guild, ADMIN_GUILD_ID, RANGER_ROLE_ID # <--- ВАЖНО: импортируем переменные
 
 logger = logging.getLogger(__name__)
-
-# Загружаем переменные из .env прямо здесь, чтобы не зависеть от checks.py
-ADMIN_GUILD_ID = int(os.getenv('ADMIN_GUILD_ID', 0))
-try:
-    RANGER_ROLE_ID = int(os.getenv('RANGER_ROLE_ID', 0))
-except (ValueError, TypeError):
-    RANGER_ROLE_ID = 0
 
 class MasterPanelView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
@@ -119,11 +113,16 @@ class MasterPanelCog(commands.Cog, name="Master Panel"):
         logger.info(f"Sent ephemeral panel '{panel_title}' from MasterPanel by user {interaction.user.name}")
 
     async def check_admin_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Проверяет права для кнопок на панели.
+        Использует переменные, импортированные из checks.py
+        """
         if not interaction.guild:
             if not interaction.response.is_done():
                 await interaction.response.send_message("⛔ This action can only be used on a server.", ephemeral=True)
             return False
 
+        # 1. Проверка ID сервера
         if interaction.guild.id != ADMIN_GUILD_ID:
             if not interaction.response.is_done():
                 await interaction.response.send_message("⛔ This command is not available on this server.", ephemeral=True)
@@ -132,11 +131,20 @@ class MasterPanelCog(commands.Cog, name="Master Panel"):
         if not isinstance(interaction.user, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_ID)
-        if ranger_role is None:
+        # 2. Проверка ID роли
+        if not any(role.id == RANGER_ROLE_ID for role in interaction.user.roles):
             if not interaction.response.is_done():
-                await interaction.response.send_message(f"⛔ You do not have the required '{RANGER_ROLE_ID}' role.", ephemeral=True)
+                # Сообщение об отсутствии роли
+                role_name_or_id = f"ID: {RANGER_ROLE_ID}"
+                try:
+                    role_obj = interaction.guild.get_role(RANGER_ROLE_ID)
+                    if role_obj:
+                        role_name_or_id = f"'{role_obj.name}'"
+                except:
+                    pass
+                await interaction.response.send_message(f"⛔ You do not have the required role: {role_name_or_id}", ephemeral=True)
             return False
+            
         return True
 
     async def cog_load(self):
