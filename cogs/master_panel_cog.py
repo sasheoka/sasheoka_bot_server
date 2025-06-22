@@ -13,7 +13,7 @@ from cogs.progress_transfer_cog import ProgressTransferPanelView
 from cogs.balance_adjustment_cog import BalanceAdjustmentPanelView
 from cogs.quest_visibility_cog import QuestIDModal
 from cogs.find_rule_id_cog import RuleNameInputModal
-from cogs.quest_completer_cog import QuestCompleteModal # <--- ИСПРАВЛЕННЫЙ ИМПОРТ
+from cogs.quest_completer_cog import QuestCompleteModal
 
 from utils.checks import is_admin_in_guild
 
@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 # Загружаем переменные из .env прямо здесь, чтобы не зависеть от checks.py
 ADMIN_GUILD_ID = int(os.getenv('ADMIN_GUILD_ID', 0))
-RANGER_ROLE_NAME = "Ranger"
+try:
+    RANGER_ROLE_ID = int(os.getenv('RANGER_ROLE_ID', 0))
+except (ValueError, TypeError):
+    RANGER_ROLE_ID = 0
 
 class MasterPanelView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
@@ -129,10 +132,10 @@ class MasterPanelCog(commands.Cog, name="Master Panel"):
         if not isinstance(interaction.user, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_NAME)
+        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_ID)
         if ranger_role is None:
             if not interaction.response.is_done():
-                await interaction.response.send_message(f"⛔ You do not have the required '{RANGER_ROLE_NAME}' role.", ephemeral=True)
+                await interaction.response.send_message(f"⛔ You do not have the required '{RANGER_ROLE_ID}' role.", ephemeral=True)
             return False
         return True
 
