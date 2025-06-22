@@ -12,8 +12,8 @@ from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
-MATCHSTICKS_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID", "7f74ae35-a6e2-496a-83ea-5b2e18769560")
-BOT_SIGNATURE = "sb" 
+MATCHSTICKS_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID")
+BOT_SIGNATURE = os.getenv("BOT_SIGNATURE", "sb")
 
 # --- Модальное Окно для Корректировки Баланса ---
 class AdjustBalanceModal(discord.ui.Modal, title="Adjust Wallet Balance"):

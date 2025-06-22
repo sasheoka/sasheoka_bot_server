@@ -15,11 +15,17 @@ from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
 
-# Константы
-TEMP_ACCESS_DURATION_MINUTES = 30
-VERIFICATION_CHANNEL_ID = 1307784438767161385
-TARGET_CHANNEL_ID = 1384466812766257193
-TELEGRAM_GROUP_ID = -1002193560609
+# --- Загрузка настроек и ID из .env ---
+try:
+    TEMP_ACCESS_DURATION_MINUTES = int(os.getenv("TG_ACCESS_DURATION_MINUTES", 30))
+    VERIFICATION_CHANNEL_ID = int(os.getenv("TG_VERIFICATION_CHANNEL_ID", 0))
+    TARGET_CHANNEL_ID = int(os.getenv("TG_TARGET_CHANNEL_ID", 0))
+    TELEGRAM_GROUP_ID = int(os.getenv("TELEGRAM_GROUP_ID", 0))
+except (ValueError, TypeError):
+    TEMP_ACCESS_DURATION_MINUTES = 30
+    VERIFICATION_CHANNEL_ID = 0
+    TARGET_CHANNEL_ID = 0
+    TELEGRAM_GROUP_ID = 0
 
 class TelegramVerificationView(discord.ui.View):
     def __init__(self, cog_instance: "TelegramVerificationCog"):

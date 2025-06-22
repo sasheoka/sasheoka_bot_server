@@ -10,9 +10,18 @@ from typing import List, Dict, Optional
 
 # --- Константы и Логгер ---
 logger = logging.getLogger(__name__)
-SUBMIT_ROLE_IDS = [1253785633621540895, 1161497860974587947]  # ID ролей для !submit
-SUBMISSIONS_ROLE_IDS = [1161497860974587947]  # ID ролей для !submissions
-ENGAGE_CHANNEL_ID = 1384466812766257193
+
+# --- Загрузка ID из .env ---
+submit_ids_str = os.getenv("ENGAGE_SUBMIT_ROLE_IDS", "")
+SUBMIT_ROLE_IDS = [int(id_str.strip()) for id_str in submit_ids_str.split(',') if id_str.strip().isdigit()]
+
+submissions_ids_str = os.getenv("ENGAGE_SUBMISSIONS_ROLE_IDS", "")
+SUBMISSIONS_ROLE_IDS = [int(id_str.strip()) for id_str in submissions_ids_str.split(',') if id_str.strip().isdigit()]
+
+try:
+    ENGAGE_CHANNEL_ID = int(os.getenv("ENGAGE_CHANNEL_ID", 0))
+except (ValueError, TypeError):
+    ENGAGE_CHANNEL_ID = 0
 
 # --- Модальное окно для сабмита ---
 class SubmitModal(discord.ui.Modal, title="Submit Twitter Post"):

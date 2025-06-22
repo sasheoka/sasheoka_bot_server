@@ -125,8 +125,11 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
         self.min_duration: Optional[datetime.timedelta] = None
         self.is_running: bool = False
 
-        # --- ЗАДАЕМ ID КАНАЛА ПРЯМО В КОДЕ ---
-        self.target_channel_id: Optional[int] = 1245830589827776545 # <--- ID ЗАДАН ЗДЕСЬ
+        # --- ЗАГРУЗКА ID КАНАЛА ИЗ .ENV ---
+        try:
+            self.target_channel_id = int(os.getenv('STAGE_CHANNEL_ID', 0))
+        except (ValueError, TypeError):
+            self.target_channel_id = 0
 
         try:
             # Оставляем чтение MIN_DURATION_SECONDS из .env или задаем его тоже, если нужно
@@ -144,16 +147,16 @@ class StageTrackerCog(commands.Cog, name="Stage Tracker"):
 
             logger.info(f"Cog '{self.__class__.__name__}' loaded.")
             if self.target_channel_id:
-                logger.info(f"  Target Stage Channel ID: {self.target_channel_id} (Hardcoded)")
-            else: # Этого не должно произойти, если ID задан выше, но на всякий случай
-                logger.error("  Target Stage Channel ID is NOT SET (Hardcoded value missing or None). Monitoring will not work.")
+                logger.info(f"  Target Stage Channel ID: {self.target_channel_id} (Loaded from .env)")
+            else:
+                logger.error("  Target Stage Channel ID is NOT SET or invalid in .env. Monitoring will not work.")
 
             if self.min_duration:
                 logger.info(f"  Minimum Duration: {self.min_duration.total_seconds()} seconds")
 
         except Exception as e:
             logger.exception(f"Unexpected error during {self.__class__.__name__} initialization: {e}")
-            if self.target_channel_id is None: # Убедимся, что если target_channel_id не установлен, это будет залогировано
+            if not self.target_channel_id:
                  logger.error("  Failed to initialize Target Stage Channel ID. Monitoring will not work.")
 
 

@@ -6,7 +6,10 @@ import os
 
 # Загружаем ID нашего единственного доверенного сервера
 ADMIN_GUILD_ID = int(os.getenv('ADMIN_GUILD_ID', 0))
-RANGER_ROLE_NAME = "Ranger"
+try:
+    RANGER_ROLE_ID = int(os.getenv('RANGER_ROLE_ID', 0))
+except (ValueError, TypeError):
+    RANGER_ROLE_ID = 0
 
 # --- ПРОВЕРКА ДЛЯ СЛЭШ-КОМАНД (app_commands) ---
 
@@ -14,7 +17,7 @@ def is_admin_in_guild():
     """
     Кастомная проверка для слэш-команд, которая разрешает выполнение, только если:
     1. Команда вызвана на нашем официальном сервере (ADMIN_GUILD_ID).
-    2. У пользователя есть роль с названием RANGER_ROLE_NAME.
+    2. У пользователя есть роль с названием RANGER_ROLE_ID.
     """
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
@@ -26,9 +29,9 @@ def is_admin_in_guild():
         if not isinstance(interaction.user, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_NAME)
+        ranger_role = discord.utils.get(interaction.user.roles, name=RANGER_ROLE_ID)
         if ranger_role is None:
-            raise app_commands.MissingRole(RANGER_ROLE_NAME)
+            raise app_commands.MissingRole(RANGER_ROLE_ID)
 
         return True
     
@@ -53,9 +56,9 @@ def is_prefix_admin_in_guild():
         if not isinstance(ctx.author, discord.Member):
             return False
 
-        ranger_role = discord.utils.get(ctx.author.roles, name=RANGER_ROLE_NAME)
+        ranger_role = discord.utils.get(ctx.author.roles, name=RANGER_ROLE_ID)
         if ranger_role is None:
-            raise commands.MissingRole(RANGER_ROLE_NAME)
+            raise commands.MissingRole(RANGER_ROLE_ID)
             
         return True
 

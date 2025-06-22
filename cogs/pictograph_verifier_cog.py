@@ -13,8 +13,8 @@ from utils.checks import is_prefix_admin_in_guild
 logger = logging.getLogger(__name__)
 
 # --- Константы для кога ---
-PICTOGRAPH_CONTRACT_ADDRESS = "0x37Cbfa07386dD09297575e6C699fe45611AC12FE"
-PICTOGRAPH_RULE_ID = "52c572dd-424f-47eb-8f61-43788d923d49"
+PICTOGRAPH_CONTRACT_ADDRESS = os.getenv("PICTOGRAPH_CONTRACT_ADDRESS", "0x37Cbfa07386dD09297575e6C699fe45611AC12FE") # Оставляем fallback для примера
+PICTOGRAPH_RULE_ID = os.getenv("PICTOGRAPH_RULE_ID") # Этот должен быть обязательным
 ABI_FILE_PATH = "data/abis/PictographsMemoryCard_abi.json"
 NULL_ADDRESS = "0x0000000000000000000000000000000000000000"
 BLOCK_SCAN_CHUNK_SIZE = 99999

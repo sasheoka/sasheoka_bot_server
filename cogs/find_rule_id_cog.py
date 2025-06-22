@@ -5,15 +5,16 @@ import logging
 from typing import Optional, Dict, Any, List
 import asyncio 
 import json # Для проверки json.loads(rule_data_field)
+import os
 
 logger = logging.getLogger(__name__)
 
-MAX_RULES_TO_DISPLAY = 15 # Max rules to show in one Discord message
+# --- Загрузка ID из .env ---
+TARGET_ORGANIZATION_ID = os.getenv("NEW_SNAG_ORGANIZATION_ID")
+TARGET_WEBSITE_ID = os.getenv("NEW_SNAG_WEBSITE_ID")
+REQUIRED_LOYALTY_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID")
 
-# Конкретные ID для фильтрации
-TARGET_ORGANIZATION_ID = "26a1764f-5637-425e-89fa-2f3fb86e758c"
-TARGET_WEBSITE_ID = "32afc5c9-f0fb-4938-9572-775dee0b4a2b"
-REQUIRED_LOYALTY_CURRENCY_ID = "7f74ae35-a6e2-496a-83ea-5b2e18769560"
+MAX_RULES_TO_DISPLAY = 15 # Max rules to show in one Discord message
 
 class RuleNameInputModal(discord.ui.Modal, title="Find Quest ID by Name"):
     rule_name_substring_input = discord.ui.TextInput(

@@ -8,6 +8,7 @@ import asyncio
 import io
 import re
 import csv
+import os
 from typing import Dict, List, Tuple, Optional
 from decimal import Decimal
 from utils.snag_api_client import SnagApiClient
@@ -16,13 +17,16 @@ from utils.checks import is_admin_in_guild
 logger = logging.getLogger(__name__)
 
 # Constants
-MATCHSTICKS_CURRENCY_ID = "7f74ae35-a6e2-496a-83ea-5b2e18769560"
-POKER_CHANNEL_ID = 1240671754989473862
-EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
-PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
-INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
-MENTION_ROLE_ID = 1240666486968942613
-
+try:
+    MATCHSTICKS_CURRENCY_ID = int(os.getenv("MATCHSTICKS_CURRENCY_ID", 0))
+    POKER_CHANNEL_ID = int(os.getenv("POKER_CHANNEL_ID", 0))
+    EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
+    PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
+    INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
+    MENTION_ROLE_ID = int(os.getenv("POKER_MENTION_ROLE_ID", 0))
+except (ValueError, TypeError):
+    POKER_CHANNEL_ID = 0
+    MENTION_ROLE_ID = 0
 
 class PokerLoginModal(discord.ui.Modal, title="Enter PokerNow Login"):
     poker_login = discord.ui.TextInput(

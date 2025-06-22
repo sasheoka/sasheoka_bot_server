@@ -4,21 +4,26 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 import io # Для работы с BytesIO для файла
+import os
 from typing import List, Dict, Optional, Tuple
 from collections import Counter # Для подсчета элементов
 
 logger = logging.getLogger(__name__)
 
+try:
+    TOURNAMENT_CHAT_CHANNEL_ID = int(os.getenv("SMASH_KARTS_CHAT_CHANNEL_ID", 0))
+    ROLE_ID_ASIA = int(os.getenv("SMASH_KARTS_ROLE_ID_ASIA", 0))
+    ROLE_ID_EU = int(os.getenv("SMASH_KARTS_ROLE_ID_EU", 0))
+    RANGER_ROLE_ID = int(os.getenv('RANGER_ROLE_ID', 0))
+except (ValueError, TypeError):
+    TOURNAMENT_CHAT_CHANNEL_ID = 0
+    ROLE_ID_ASIA = 0
+    ROLE_ID_EU = 0
+    RANGER_ROLE_ID = 0
+    
 # --- Константы ---
 REGIONS = ["Asia", "EU"]
 SERVERS = ["Camp", "Curvance"]
-RANGER_ROLE_NAME = "Ranger" # Роль, необходимая для запуска команд администратора
-TOURNAMENT_CHAT_CHANNEL_ID = 1378074870876737686 # ID канала, на который будет вести кнопка
-
-# --- ID ролей для регионов ---
-# УБЕДИТЕСЬ, ЧТО ЭТИ ID ВЕРНЫ ДЛЯ ВАШЕГО СЕРВЕРА
-ROLE_ID_ASIA = 1379124247707914382
-ROLE_ID_EU = 1379124386597965935
 
 REGION_ROLES = {
     "Asia": ROLE_ID_ASIA,
@@ -282,7 +287,7 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
 
     @app_commands.command(name="smash_karts_tournament", description="Starts a Smash Karts tournament event.")
     @app_commands.describe(target_channel_id="ID of the channel to send the announcement to.")
-    @app_commands.checks.has_any_role(RANGER_ROLE_NAME)
+    @app_commands.checks.has_any_role(RANGER_ROLE_ID)
     async def smash_karts_tournament_slash(self, interaction: discord.Interaction, target_channel_id: str):
         if self.tournament_active:
             await interaction.response.send_message("A tournament is already active. Please end it first using `/end_smash_karts_tournament`.", ephemeral=True)
@@ -341,7 +346,7 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
             await interaction.followup.send(f"Failed to send tournament announcement: {e}", ephemeral=True)
 
     @app_commands.command(name="end_smash_karts_tournament", description="Ends the current Smash Karts tournament and sends a report as a file.")
-    @app_commands.checks.has_any_role(RANGER_ROLE_NAME)
+    @app_commands.checks.has_any_role(RANGER_ROLE_ID)
     async def end_smash_karts_tournament_slash(self, interaction: discord.Interaction):
         if not self.tournament_active:
             await interaction.response.send_message("No Smash Karts tournament is currently active to end.", ephemeral=True)
@@ -433,7 +438,7 @@ class SmashKartsCog(commands.Cog, name="Smash Karts Tournament"):
     @end_smash_karts_tournament_slash.error
     async def smash_karts_error_handler(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingAnyRole):
-            await interaction.response.send_message(f"You don't have the '{RANGER_ROLE_NAME}' role to use this command.", ephemeral=True)
+            await interaction.response.send_message(f"You don't have the '{RANGER_ROLE_ID}' role to use this command.", ephemeral=True)
         elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.Forbidden):
             await interaction.response.send_message(f"I'm missing permissions to perform an action. Details: {error.original.text}", ephemeral=True)
         else:
