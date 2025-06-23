@@ -17,16 +17,19 @@ from utils.checks import is_admin_in_guild
 logger = logging.getLogger(__name__)
 
 # Constants
+# Constants
 try:
     MATCHSTICKS_CURRENCY_ID = int(os.getenv("MATCHSTICKS_CURRENCY_ID", 0))
     POKER_CHANNEL_ID = int(os.getenv("POKER_CHANNEL_ID", 0))
-    EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
-    PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
-    INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
     MENTION_ROLE_ID = int(os.getenv("POKER_MENTION_ROLE_ID", 0))
 except (ValueError, TypeError):
     POKER_CHANNEL_ID = 0
     MENTION_ROLE_ID = 0
+
+# Define patterns and constants unconditionally
+EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
+INVITE_CODE_PATTERN = re.compile(r"^[a-zA-F0-9_-]{10}$")
+PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
 
 class PokerLoginModal(discord.ui.Modal, title="Enter PokerNow Login"):
     poker_login = discord.ui.TextInput(
