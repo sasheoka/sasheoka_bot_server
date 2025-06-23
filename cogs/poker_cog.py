@@ -17,19 +17,26 @@ from utils.checks import is_admin_in_guild
 logger = logging.getLogger(__name__)
 
 # Constants
-# Constants
+# Константы, которые не зависят от переменных окружения
+EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
+INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
+PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
+
+MATCHSTICKS_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID", "")
+if not MATCHSTICKS_CURRENCY_ID:
+    logger.warning("MATCHSTICKS_CURRENCY_ID не установлена. Проверка баланса может не работать.")
+    
 try:
-    MATCHSTICKS_CURRENCY_ID = int(os.getenv("MATCHSTICKS_CURRENCY_ID", 0))
-    POKER_CHANNEL_ID = int(os.getenv("POKER_CHANNEL_ID", 0))
-    MENTION_ROLE_ID = int(os.getenv("POKER_MENTION_ROLE_ID", 0))
+    POKER_CHANNEL_ID = int(os.getenv("POKER_CHANNEL_ID", "0"))
 except (ValueError, TypeError):
     POKER_CHANNEL_ID = 0
-    MENTION_ROLE_ID = 0
+    logger.warning("POKER_CHANNEL_ID не задан или имеет неверный формат. Установлено значение 0.")
 
-# Define patterns and constants unconditionally
-EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
-INVITE_CODE_PATTERN = re.compile(r"^[a-zA-F0-9_-]{10}$")
-PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
+try:
+    MENTION_ROLE_ID = int(os.getenv("POKER_MENTION_ROLE_ID", "0"))
+except (ValueError, TypeError):
+    MENTION_ROLE_ID = 0
+    logger.warning("MENTION_ROLE_ID не задан или имеет неверный формат. Установлено значение 0.")
 
 class PokerLoginModal(discord.ui.Modal, title="Enter PokerNow Login"):
     poker_login = discord.ui.TextInput(
