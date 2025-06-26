@@ -11,16 +11,13 @@ from utils.checks import is_prefix_admin_in_guild
 logger = logging.getLogger(__name__)
 EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 
-# --- Модальное окно для ввода адресов ---
 class WalletTransferModal(discord.ui.Modal, title="Wallet Transfer"):
     old_wallet_address_input = discord.ui.TextInput(
-        label="Compromised Wallet Address",
-        placeholder="0x...",
+        label="Compromised Wallet Address", placeholder="0x...",
         required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=0
     )
     new_wallet_address_input = discord.ui.TextInput(
-        label="New Wallet Address",
-        placeholder="0x...",
+        label="New Wallet Address", placeholder="0x...",
         required=True, style=discord.TextStyle.short, min_length=42, max_length=42, row=1
     )
 
@@ -37,14 +34,10 @@ class WalletTransferModal(discord.ui.Modal, title="Wallet Transfer"):
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         logger.error(f"Error in WalletTransferModal: {error}", exc_info=True)
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send("An error occurred in the modal.", ephemeral=True)
-            else:
-                await interaction.response.send_message("An error occurred in the modal.", ephemeral=True)
-        except discord.HTTPException:
-            pass
+            if interaction.response.is_done(): await interaction.followup.send("An error occurred in the modal.", ephemeral=True)
+            else: await interaction.response.send_message("An error occurred in the modal.", ephemeral=True)
+        except discord.HTTPException: pass
 
-# --- View для панели управления ---
 class WalletTransferPanelView(discord.ui.View):
     def __init__(self, cog_instance: "WalletTransferCog"):
         super().__init__(timeout=None)
@@ -66,14 +59,11 @@ class WalletTransferPanelView(discord.ui.View):
         modal = WalletTransferModal(self.cog)
         await interaction.response.send_modal(modal)
 
-
-# --- Класс Кога ---
 class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.snag_client: Optional[SnagApiClient] = getattr(bot, 'snag_client', None)
-        if not self.snag_client:
-            logger.error(f"{self.__class__.__name__}: Main SnagApiClient not found! Transfers will not work.")
+        if not self.snag_client: logger.error(f"{self.__class__.__name__}: Main SnagApiClient not found!")
         logger.info(f"Cog '{self.__class__.__name__}' loaded.")
 
     async def cog_load(self):
@@ -91,14 +81,13 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
             
         logger.info(f"User {interaction.user.name} initiated wallet transfer from {old_wallet} to {new_wallet}")
 
-        # --- Step 1: Find User data by old wallet ---
+        # --- Step 1: Find all necessary User data by old wallet ---
         report_lines.append(f"**Step 1: Finding User Data by Old Wallet** (`...{old_wallet[-6:]}`)")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
         user_response = await self.snag_client._make_request("GET", GET_USER_ENDPOINT, params={'walletAddress': old_wallet, 'limit': 1})
-        if not user_response or user_response.get("error") or not isinstance(user_response.get("data"), list) or not user_response["data"]:
-            report_lines.append(f"❌ **Error:** Could not find a user linked to the old wallet address.")
-            await interaction.edit_original_response(content="\n".join(report_lines)); return
+        if not user_response or not isinstance(user_response.get("data"), list) or not user_response["data"]:
+            report_lines.append(f"❌ **Error:** Could not find a user linked to the old wallet address."); await interaction.edit_original_response(content="\n".join(report_lines)); return
 
         user_data = user_response["data"][0]
         user_id = user_data.get("id")
@@ -106,63 +95,56 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
 
         if not user_id:
             report_lines.append(f"❌ **Error:** Found user data but it's missing a `userId`. Aborting."); await interaction.edit_original_response(content="\n".join(report_lines)); return
-
+        
         report_lines.append(f"✅ User found. **User ID:** `{user_id}`")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
         # --- Step 2: Prepare and Update Metadata ---
-        report_lines.append(f"\n**Step 2: Preparing and Updating Metadata**")
+        report_lines.append(f"\n**Step 2: Updating User's Primary Wallet via Metadata**")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
-        # We need to find the specific metadata entry that corresponds to the loyalty platform
+        # Find the correct organizationId and websiteId from the loyalty account
         account_response = await self.snag_client.get_account_by_wallet(old_wallet)
         if not account_response or not isinstance(account_response.get("data"), list) or not account_response["data"]:
-            report_lines.append(f"❌ **Error:** Could not find the specific loyalty account to get Org/Website IDs."); await interaction.edit_original_response(content="\n".join(report_lines)); return
-
-        loyalty_account = account_response["data"][0]
-        organization_id = loyalty_account.get("organizationId")
-        website_id = loyalty_account.get("websiteId")
+            report_lines.append(f"❌ **Error:** Could not find the loyalty account to get Org/Website IDs."); await interaction.edit_original_response(content="\n".join(report_lines)); return
+        
+        organization_id = account_response["data"][0].get("organizationId")
+        website_id = account_response["data"][0].get("websiteId")
 
         if not organization_id or not website_id:
             report_lines.append(f"❌ **Error:** Loyalty account is missing Org/Website ID. Aborting."); await interaction.edit_original_response(content="\n".join(report_lines)); return
-            
+
         report_lines.append(f"  - Using Org ID `...{organization_id[-6:]}` and Site ID `...{website_id[-6:]}`")
         await interaction.edit_original_response(content="\n".join(report_lines))
-
-        metadata_to_update: Dict[str, Any] = {}
-        if user_metadata_list:
-            # Find the metadata that matches the website/org from the loyalty account
-            for meta in user_metadata_list:
-                meta_user = meta.get("user", {})
-                if isinstance(meta_user, dict) and meta_user.get("websiteId") == website_id:
-                    metadata_to_update = meta.copy() # Make a copy to modify
-                    break
-            # Fallback if no specific match, just take the first one
-            if not metadata_to_update:
-                metadata_to_update = user_metadata_list[0].copy()
         
-        # Construct the payload for the POST /api/users/metadatas endpoint
+        # --- ФИНАЛЬНАЯ ЛОГИКА PAYLOAD ---
+        # Мы отправляем минимально необходимый payload.
+        # API должен найти пользователя по комбинации (userId, organizationId, websiteId)
+        # и обновить его метаданные, включая ПЕРЕЗАПИСЬ КОШЕЛЬКА.
         payload = {
             "userId": user_id,
             "organizationId": organization_id,
             "websiteId": website_id,
-            "walletAddress": new_wallet, # The new wallet address
-            # Carry over other important fields to prevent data loss
-            "discordUser": metadata_to_update.get("discordUser"),
-            "twitterUser": metadata_to_update.get("twitterUser"),
-            "telegramUsername": metadata_to_update.get("telegramUsername"),
-            "displayName": metadata_to_update.get("displayName")
+            "walletAddress": new_wallet, # Устанавливаем новый кошелек
         }
 
-        # Remove keys with None values to send a clean payload
-        payload = {k: v for k, v in payload.items() if v is not None}
+        # Добавим существующие социальные данные, чтобы не потерять их
+        if user_metadata_list:
+            # Просто берем данные из первой записи метаданных, предполагая, что они релевантны
+            meta = user_metadata_list[0]
+            if meta.get("discordUser"): payload["discordUser"] = meta.get("discordUser")
+            if meta.get("twitterUser"): payload["twitterUser"] = meta.get("twitterUser")
+            if meta.get("telegramUsername"): payload["telegramUsername"] = meta.get("telegramUsername")
+            if meta.get("displayName"): payload["displayName"] = meta.get("displayName")
 
-        # Call the new client method
+        logger.debug(f"Calling create_user_metadata with payload: {payload}")
         update_response = await self.snag_client.create_user_metadata(payload)
 
         if not update_response or update_response.get("error"):
-            error_msg = update_response.get("message", "Unknown error during metadata update.") if update_response else "No response"
+            error_msg = update_response.get("message", "Unknown error.") if update_response else "No response"
             report_lines.append(f"❌ **Error:** Failed to update user metadata. API says: `{error_msg}`")
+            raw_resp_part = str(update_response.get("raw_response", ""))[:300]
+            report_lines.append(f"  Raw response: `{raw_resp_part}...`")
             await interaction.edit_original_response(content="\n".join(report_lines)); return
 
         report_lines.append("✅ User metadata successfully updated with new wallet.")
@@ -192,7 +174,6 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
         )
         view = WalletTransferPanelView(self)
         await ctx.send(embed=embed, view=view)
-        logger.info(f"WalletTransferPanel sent by {ctx.author.name} to channel {ctx.channel.id}")
 
     @send_wallet_transfer_panel_command.error
     async def send_panel_error(self, ctx: commands.Context, error: commands.CommandError):
