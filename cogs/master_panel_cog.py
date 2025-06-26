@@ -13,9 +13,7 @@ from cogs.balance_adjustment_cog import BalanceAdjustmentPanelView
 from cogs.quest_visibility_cog import QuestIDModal
 from cogs.find_rule_id_cog import RuleNameInputModal
 from cogs.quest_completer_cog import QuestCompleteModal
-from cogs.wallet_transfer_cog import WalletTransferPanelView
 
-from utils.checks import is_admin_in_guild
 from utils.checks import is_admin_in_guild, ADMIN_GUILD_ID, RANGER_ROLE_ID # <--- ВАЖНО: импортируем переменные
 
 logger = logging.getLogger(__name__)
@@ -33,12 +31,6 @@ class MasterPanelView(discord.ui.View):
         if not self.cog_instance or not await self.cog_instance.check_admin_permissions(interaction): return
         await interaction.response.defer(ephemeral=True, thinking=False) 
         await self.cog_instance._send_specific_panel(interaction, "Control Panel", "ℹ️ Snag Loyalty Info Panel", "Use the buttons below to query the Snag Loyalty System.", InfoPanelView, discord.Color.purple())
-
-    @discord.ui.button(label="✈️ Wallet Transfer", style=discord.ButtonStyle.danger, custom_id="masterpanel:wallet_transfer_v1", row=1)
-    async def wallet_transfer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.cog_instance or not await self.cog_instance.check_admin_permissions(interaction): return
-        await interaction.response.defer(ephemeral=True, thinking=False)
-        await self.cog_instance._send_specific_panel(interaction, "Wallet Transfer", "Wallet Progress Transfer Panel", "Initiate progress transfer between wallets. This is a sensitive operation, use with caution.", WalletTransferPanelView, discord.Color.red())
 
     @discord.ui.button(label="📊 Balance Adjust", style=discord.ButtonStyle.secondary, custom_id="masterpanel:balance_v4", row=1)
     async def balance_adjustment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
