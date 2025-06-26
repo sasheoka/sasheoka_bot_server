@@ -126,7 +126,12 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
         report_lines.append(f"\n**Step 2: Disconnecting Old Wallet**")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
-        disconnect_payload = {'userId': user_id, 'walletAddress': old_wallet}
+        disconnect_payload = {
+            'userId': user_id, 
+            'walletAddress': old_wallet,
+            'organizationId': self.snag_client._organization_id,
+            'websiteId': self.snag_client._website_id
+        }
         disconnect_response = await self.snag_client._make_request("POST", "/api/users/disconnect", json_data=disconnect_payload)
 
         # Успешный дисконнект часто возвращает 204 No Content, поэтому проверяем на наличие ошибки
@@ -143,7 +148,12 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
         report_lines.append(f"\n**Step 3: Connecting New Wallet** (`...{new_wallet[-6:]}`)")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
-        connect_payload = {'userId': user_id, 'walletAddress': new_wallet}
+        connect_payload = {
+            'userId': user_id, 
+            'walletAddress': new_wallet,
+            'organizationId': self.snag_client._organization_id,
+            'websiteId': self.snag_client._website_id
+        }
         connect_response = await self.snag_client._make_request("POST", "/api/users/connect", json_data=connect_payload)
 
         if not connect_response or connect_response.get("error"):
