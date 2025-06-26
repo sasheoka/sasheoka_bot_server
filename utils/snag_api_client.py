@@ -15,6 +15,7 @@ REFERRALS_ENDPOINT = "/api/referral/users"
 RULES_ENDPOINT = "/api/loyalty/rules"
 BADGES_ENDPOINT = "/api/loyalty/badges"
 GET_USER_ENDPOINT = "/api/users"
+USER_METADATAS_ENDPOINT = "/api/users/metadatas"
 
 SNAG_API_KEY_HEADER = "X-API-KEY"
 logger = logging.getLogger(__name__)
@@ -195,3 +196,9 @@ class SnagApiClient:
     async def update_loyalty_rule(self, rule_id: str, update_data: Dict[str, Any]) -> Optional[Dict]:
         endpoint = f"{RULES_ENDPOINT}/{rule_id}"
         return await self._make_request("POST", endpoint, json_data=update_data)
+    
+    async def create_user_metadata(self, metadata_payload: Dict[str, Any]) -> Optional[Dict]:
+        """
+        Creates or updates user metadata. This is used for wallet transfers.
+        """
+        return await self._make_request("POST", USER_METADATAS_ENDPOINT, json_data=metadata_payload)
