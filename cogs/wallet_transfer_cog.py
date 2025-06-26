@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Optional, List
 
-from utils.snag_api_client import SnagApiClient, GET_USER_ENDPOINT
+from utils.snag_api_client import SnagApiClient
 from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,8 @@ class WalletTransferModal(discord.ui.Modal, title="Wallet Transfer"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        
         old_wallet = self.old_wallet_address_input.value.strip().lower()
         new_wallet = self.new_wallet_address_input.value.strip().lower()
-
         await self.cog.process_wallet_transfer(interaction, old_wallet, new_wallet)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
@@ -92,7 +90,7 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
 
         # --- 0. Валидация ---
         if not EVM_ADDRESS_PATTERN.match(old_wallet) or not EVM_ADDRESS_PATTERN.match(new_wallet):
-            await interaction.followup.send("⚠️ Invalid EVM address format. Both addresses must be valid `0x...` wallets.", ephemeral=True)
+            await interaction.followup.send("⚠️ Invalid EVM address format.", ephemeral=True)
             return
         if old_wallet == new_wallet:
             await interaction.followup.send("⚠️ The old and new wallet addresses cannot be the same.", ephemeral=True)
@@ -100,41 +98,47 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
             
         logger.info(f"User {interaction.user.name} initiated wallet transfer from {old_wallet} to {new_wallet}")
 
-        # --- 1. Найти User ID по старому кошельку ---
-        report_lines.append(f"**Step 1: Finding User by Old Wallet** (`...{old_wallet[-6:]}`)")
+        # --- 1. Найти аккаунт лояльности по старому кошельку ---
+        report_lines.append(f"**Step 1: Finding Loyalty Account by Old Wallet** (`...{old_wallet[-6:]}`)")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
-        user_response = await self.snag_client._make_request("GET", GET_USER_ENDPOINT, params={'walletAddress': old_wallet, 'limit': 1})
+        # <--- ИЗМЕНЕНИЕ: Используем get_account_by_wallet вместо прямого вызова GET /api/users ---
+        account_response = await self.snag_client.get_account_by_wallet(old_wallet)
         
-        if not user_response or user_response.get("error") or not isinstance(user_response.get("data"), list) or not user_response["data"]:
-            report_lines.append(f"❌ **Error:** Could not find a user linked to the old wallet address.")
+        if not account_response or account_response.get("error") or not isinstance(account_response.get("data"), list) or not account_response["data"]:
+            report_lines.append(f"❌ **Error:** Could not find a loyalty account linked to the old wallet address.")
             await interaction.edit_original_response(content="\n".join(report_lines))
             return
 
-        user_data = user_response["data"][0]
-        user_id = user_data.get("id")
+        account_data = account_response["data"][0]
+        # <--- ИЗМЕНЕНИЕ: Получаем все три ID из ответа ---
+        user_id = account_data.get("userId")
+        organization_id = account_data.get("organizationId")
+        website_id = account_data.get("websiteId")
 
-        if not user_id:
-            report_lines.append(f"❌ **Error:** Found user data but it's missing a `userId`. Aborting.")
+        if not all([user_id, organization_id, website_id]):
+            report_lines.append(f"❌ **Error:** Found account data but it's missing critical IDs (`userId`, `organizationId`, or `websiteId`). Aborting.")
             await interaction.edit_original_response(content="\n".join(report_lines))
             return
             
-        report_lines.append(f"✅ User found. **User ID:** `{user_id}`")
+        report_lines.append(f"✅ Account found. **User ID:** `{user_id}`")
+        report_lines.append(f"  - Org ID: `...{organization_id[-6:]}`, Site ID: `...{website_id[-6:]}`")
         await interaction.edit_original_response(content="\n".join(report_lines))
 
         # --- 2. Отвязать старый кошелек ---
         report_lines.append(f"\n**Step 2: Disconnecting Old Wallet**")
         await interaction.edit_original_response(content="\n".join(report_lines))
-
+        
+        # <--- ИЗМЕНЕНИЕ: Используем динамически полученные ID ---
         disconnect_payload = {
             'userId': user_id, 
             'walletAddress': old_wallet,
-            'organizationId': self.snag_client._organization_id,
-            'websiteId': self.snag_client._website_id
+            'organizationId': organization_id,
+            'websiteId': website_id
         }
+        
         disconnect_response = await self.snag_client._make_request("POST", "/api/users/disconnect", json_data=disconnect_payload)
 
-        # Успешный дисконнект часто возвращает 204 No Content, поэтому проверяем на наличие ошибки
         if disconnect_response and disconnect_response.get("error"):
             error_msg = disconnect_response.get('message', 'Unknown error during disconnection.')
             report_lines.append(f"❌ **Error:** Failed to disconnect old wallet. API says: `{error_msg}`")
@@ -147,13 +151,15 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
         # --- 3. Привязать новый кошелек ---
         report_lines.append(f"\n**Step 3: Connecting New Wallet** (`...{new_wallet[-6:]}`)")
         await interaction.edit_original_response(content="\n".join(report_lines))
-
+        
+        # <--- ИЗМЕНЕНИЕ: Используем динамически полученные ID ---
         connect_payload = {
             'userId': user_id, 
             'walletAddress': new_wallet,
-            'organizationId': self.snag_client._organization_id,
-            'websiteId': self.snag_client._website_id
+            'organizationId': organization_id,
+            'websiteId': website_id
         }
+
         connect_response = await self.snag_client._make_request("POST", "/api/users/connect", json_data=connect_payload)
 
         if not connect_response or connect_response.get("error"):
@@ -183,7 +189,6 @@ class WalletTransferCog(commands.Cog, name="Wallet Transfer"):
     @commands.command(name="send_wallet_transfer_panel")
     @is_prefix_admin_in_guild()
     async def send_wallet_transfer_panel_command(self, ctx: commands.Context):
-        """Sends the persistent panel for wallet transfers."""
         embed = discord.Embed(
             title="Wallet Progress Transfer Panel",
             description="Initiate progress transfer between wallets. This is a sensitive operation, use with caution.",
