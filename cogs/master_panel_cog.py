@@ -9,11 +9,11 @@ import os
 from cogs.control_panel_cog import InfoPanelView
 from cogs.stage_tracker_cog import StageTrackerView
 from cogs.text_collector_cog import TextCollectorPanelView
-from cogs.progress_transfer_cog import ProgressTransferPanelView
 from cogs.balance_adjustment_cog import BalanceAdjustmentPanelView
 from cogs.quest_visibility_cog import QuestIDModal
 from cogs.find_rule_id_cog import RuleNameInputModal
 from cogs.quest_completer_cog import QuestCompleteModal
+from cogs.wallet_transfer_cog import WalletTransferPanelView
 
 from utils.checks import is_admin_in_guild
 from utils.checks import is_admin_in_guild, ADMIN_GUILD_ID, RANGER_ROLE_ID # <--- ВАЖНО: импортируем переменные
@@ -34,11 +34,11 @@ class MasterPanelView(discord.ui.View):
         await interaction.response.defer(ephemeral=True, thinking=False) 
         await self.cog_instance._send_specific_panel(interaction, "Control Panel", "ℹ️ Snag Loyalty Info Panel", "Use the buttons below to query the Snag Loyalty System.", InfoPanelView, discord.Color.purple())
 
-    @discord.ui.button(label="✈️ Progress Transfer", style=discord.ButtonStyle.danger, custom_id="masterpanel:transfer_v4", row=1)
-    async def progress_transfer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="✈️ Wallet Transfer", style=discord.ButtonStyle.danger, custom_id="masterpanel:wallet_transfer_v1", row=1)
+    async def wallet_transfer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.cog_instance or not await self.cog_instance.check_admin_permissions(interaction): return
         await interaction.response.defer(ephemeral=True, thinking=False)
-        await self.cog_instance._send_specific_panel(interaction, "Progress Transfer", "Wallet Progress Transfer Panel", "Initiate progress transfer. This is a sensitive operation, use with caution.", ProgressTransferPanelView, discord.Color.red())
+        await self.cog_instance._send_specific_panel(interaction, "Wallet Transfer", "Wallet Progress Transfer Panel", "Initiate progress transfer between wallets. This is a sensitive operation, use with caution.", WalletTransferPanelView, discord.Color.red())
 
     @discord.ui.button(label="📊 Balance Adjust", style=discord.ButtonStyle.secondary, custom_id="masterpanel:balance_v4", row=1)
     async def balance_adjustment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
