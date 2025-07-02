@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from decimal import Decimal
 
 from utils.snag_api_client import SnagApiClient
+from cogs.block_checker_cog import BlockCheckModal
 from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,11 @@ class BadgePaginatorView(discord.ui.View):
 
 # InfoPanelView ... (без изменений, ID кнопок могут остаться v7 или обновлены на v8 для консистентности)
 class InfoPanelView(discord.ui.View):
-    def __init__(self, cog_instance: "ControlPanelCog"): super().__init__(timeout=None); self.cog = cog_instance
+    def __init__(self, cog_instance: "ControlPanelCog"):
+        super().__init__(timeout=None)
+        self.cog = cog_instance
+        # Получаем доступ к боту через ког, чтобы найти другой ког
+        self.bot = cog_instance.bot
     async def _check_ranger_role(self, interaction: discord.Interaction) -> bool:
         if not isinstance(interaction.user, discord.Member): await interaction.response.send_message("This command can only be used in a server.", ephemeral=True); return False
         ranger_role = discord.utils.get(interaction.guild.roles, name="Ranger")
@@ -280,7 +285,19 @@ class InfoPanelView(discord.ui.View):
     async def quest_stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(AddressForStatsModal(self.cog))
-
+    @discord.ui.button(label="🚫 Block Status", style=discord.ButtonStyle.danger, custom_id="info_panel:block_check_v1", row=0)
+    async def block_status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+        
+        # Получаем ког "Block Checker" через экземпляр бота
+        target_cog = self.bot.get_cog("Block Checker")
+        if not target_cog:
+            await interaction.response.send_message("Block Checker feature is temporarily unavailable.", ephemeral=True)
+            return
+            
+        modal = BlockCheckModal(target_cog)
+        await interaction.response.send_modal(modal)
 
 # --- Класс Кога ControlPanel ---
 class ControlPanelCog(commands.Cog, name="Control Panel"):
