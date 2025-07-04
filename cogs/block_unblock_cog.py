@@ -136,7 +136,6 @@ class BlockUnblockCog(commands.Cog, name="Block/Unblock User"):
             return
 
         payload = {
-            "userId": user_id,
             "walletAddress": wallet_address,
             "organizationId": self.snag_client._organization_id,
             "websiteId": self.snag_client._website_id,

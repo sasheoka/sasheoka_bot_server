@@ -29,8 +29,23 @@ class MasterPanelView(discord.ui.View):
     @discord.ui.button(label="ℹ️ Info Panel", style=discord.ButtonStyle.green, custom_id="masterpanel:info_v5", row=0)
     async def info_panel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.cog_instance or not await self.cog_instance.check_admin_permissions(interaction): return
-        await interaction.response.defer(ephemeral=True, thinking=False) 
-        await self.cog_instance._send_specific_panel(interaction, "Control Panel", "ℹ️ Snag Loyalty Info Panel", "Use the buttons below to query the Snag Loyalty System.", InfoPanelView, discord.Color.purple())
+    
+        cog_instance = self.bot.get_cog("Control Panel")
+        if not cog_instance:
+            await interaction.response.send_message("Panel 'Info Panel' is temporarily unavailable (module not loaded).", ephemeral=True)
+            logger.error("Cog 'Control Panel' not found when trying to send panel from MasterPanel.")
+            return
+
+        embed = discord.Embed(
+            title="ℹ️ Snag Loyalty Info Panel",
+            description="Use the buttons below to query the Snag Loyalty System.",
+            color=discord.Color.purple()
+        )
+        view_instance = InfoPanelView(cog_instance)
+
+        # ИСПРАВЛЕНИЕ: Отправляем панель как прямой ответ, а не через defer + followup
+        await interaction.response.send_message(embed=embed, view=view_instance, ephemeral=True)
+        logger.info(f"Sent ephemeral panel 'Info Panel' from MasterPanel by user {interaction.user.name}")
 
     @discord.ui.button(label="📊 Balance Adjust", style=discord.ButtonStyle.secondary, custom_id="masterpanel:balance_v4", row=1)
     async def balance_adjustment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
