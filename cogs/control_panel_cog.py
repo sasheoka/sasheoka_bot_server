@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from utils.snag_api_client import SnagApiClient
 from cogs.block_checker_cog import BlockCheckModal
+from cogs.block_unblock_cog import BlockUnblockModal
 from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
@@ -265,7 +266,7 @@ class InfoPanelView(discord.ui.View):
     async def find_wallet_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(FindWalletModal(self.cog))
-    @discord.ui.button(label="Transaction History by Wallet", style=discord.ButtonStyle.primary, custom_id="info_panel:history_by_wallet_v8_final", row=1)
+    @discord.ui.button(label="Transaction History by Wallet", style=discord.ButtonStyle.primary, custom_id="info_panel:history_by_wallet_v8_final", row=2)
     async def transaction_history_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(AddressForHistoryModal(self.cog))
@@ -277,18 +278,32 @@ class InfoPanelView(discord.ui.View):
     async def check_balance_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(BalanceCheckModal(self.cog))
-    @discord.ui.button(label="Get User Badges", style=discord.ButtonStyle.grey, custom_id="info_panel:get_user_badges_v8_final", row=2)
+    @discord.ui.button(label="Get User Badges", style=discord.ButtonStyle.grey, custom_id="info_panel:get_user_badges_v8_final", row=3)
     async def get_user_badges_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(AddressForBadgesModal(self.cog))
-    @discord.ui.button(label="Quest Stats", style=discord.ButtonStyle.blurple, custom_id="info_panel:quest_stats_v8_final", row=1)
+    @discord.ui.button(label="Quest Stats", style=discord.ButtonStyle.blurple, custom_id="info_panel:quest_stats_v8_final", row=2)
     async def quest_stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction): return
         await interaction.response.send_modal(AddressForStatsModal(self.cog))
-    @discord.ui.button(label="🚫 Block Status", style=discord.ButtonStyle.danger, custom_id="info_panel:block_check_v1", row=0)
+    @discord.ui.button(label="🚫 Block Status", style=discord.ButtonStyle.danger, custom_id="info_panel:block_check_v1", row=1)
     async def block_status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction):
             return
+    @discord.ui.button(label="🛠️ Block/Unblock Action", style=discord.ButtonStyle.secondary, custom_id="info_panel:block_unblock_action_v1", row=1)
+    async def block_unblock_action_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+    
+        # Получаем новый ког "Block/Unblock User"
+        target_cog = self.bot.get_cog("Block/Unblock User")
+        if not target_cog:
+            await interaction.response.send_message("The Block/Unblock feature is temporarily unavailable.", ephemeral=True)
+            return
+        
+        # Вызываем модальное окно из нового кога
+        modal = BlockUnblockModal(target_cog)
+        await interaction.response.send_modal(modal)   
         
         # Получаем ког "Block Checker" через экземпляр бота
         target_cog = self.bot.get_cog("Block Checker")
