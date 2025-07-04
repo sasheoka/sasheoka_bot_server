@@ -408,6 +408,9 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not discord_h and not twitter_h: await interaction.followup.send("Please enter at least one social handle (Discord or Twitter/X).", ephemeral=True); return
         identifier_type = "discordUser" if discord_h else "twitterUser"; identifier_value = discord_h if discord_h else twitter_h
         if not identifier_value: await interaction.followup.send("Failed to determine social handle for lookup.", ephemeral=True); return
+         # Создаем понятный заголовок для ответа
+        display_identifier_type = "Discord" if identifier_type == "discordUser" else "Twitter/X"
+        response_header = f"Search results for {display_identifier_type} handle: **`{identifier_value}`**"
         found_address_legacy = None; found_address_main = None
         if self.snag_client_legacy and self.snag_client_legacy._api_key: logger.info(f"User {interaction.user.id} looking up wallet (Legacy Site) for {identifier_type}: {identifier_value}"); found_address_legacy = await self._find_wallet_by_social_api_filter(self.snag_client_legacy, identifier_type, identifier_value)
         else: logger.warning(f"Legacy SnagApiClient not available or key missing for wallet lookup by {identifier_type}.")
@@ -416,8 +419,13 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         response_lines = [];
         if found_address_legacy: response_lines.append(f"**Old Loyalty System Wallet:** `{found_address_legacy}`")
         if found_address_main: response_lines.append(f"**New Loyalty System Wallet:** `{found_address_main}`")
-        if not response_lines: await interaction.followup.send(f"Could not find wallet for {identifier_type} `{identifier_value}` in either loyalty system.", ephemeral=True)
-        else: await interaction.followup.send("\n".join(response_lines), ephemeral=True)
+        # Модифицируем итоговые сообщения, чтобы включить заголовок
+        if not response_lines:
+            final_message = f"{response_header}\n\nCould not find any linked wallets for this handle."
+            await interaction.followup.send(final_message, ephemeral=True)
+        else:
+            final_message = f"{response_header}\n\n" + "\n".join(response_lines)
+            await interaction.followup.send(final_message, ephemeral=True)
     async def handle_find_socials_logic(self, interaction: discord.Interaction, address_val: str): # ... (без изменений) ...
         target_address = address_val.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address): await interaction.followup.send("⚠️ Invalid EVM address format. Please use `0x...`", ephemeral=True); return
