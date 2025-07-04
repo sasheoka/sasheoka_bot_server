@@ -252,7 +252,7 @@ class BadgePaginatorView(discord.ui.View):
 # InfoPanelView ... (без изменений, ID кнопок могут остаться v7 или обновлены на v8 для консистентности)
 class InfoPanelView(discord.ui.View):
     def __init__(self, cog_instance: "ControlPanelCog"):
-        super().__init__(timeout=None)
+        super().__init__(timeout=86400.0)
         self.cog = cog_instance
         # Получаем доступ к боту через ког, чтобы найти другой ког
         self.bot = cog_instance.bot
