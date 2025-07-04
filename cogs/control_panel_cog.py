@@ -290,22 +290,7 @@ class InfoPanelView(discord.ui.View):
     async def block_status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._check_ranger_role(interaction):
             return
-    @discord.ui.button(label="🛠️ Block/Unblock Action", style=discord.ButtonStyle.secondary, custom_id="info_panel:block_unblock_action_v1", row=1)
-    async def block_unblock_action_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check_ranger_role(interaction):
-            return
-    
-        # Получаем новый ког "Block/Unblock User"
-        target_cog = self.bot.get_cog("Block/Unblock User")
-        if not target_cog:
-            await interaction.response.send_message("The Block/Unblock feature is temporarily unavailable.", ephemeral=True)
-            return
-        
-        # Вызываем модальное окно из нового кога
-        modal = BlockUnblockModal(target_cog)
-        await interaction.response.send_modal(modal)   
-        
-        # Получаем ког "Block Checker" через экземпляр бота
+            
         target_cog = self.bot.get_cog("Block Checker")
         if not target_cog:
             await interaction.response.send_message("Block Checker feature is temporarily unavailable.", ephemeral=True)
@@ -313,7 +298,19 @@ class InfoPanelView(discord.ui.View):
             
         modal = BlockCheckModal(target_cog)
         await interaction.response.send_modal(modal)
-
+    @discord.ui.button(label="🛠️ Block/Unblock Action", style=discord.ButtonStyle.secondary, custom_id="info_panel:block_unblock_action_v2", row=1)
+    async def block_unblock_action_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_ranger_role(interaction):
+            return
+    
+        target_cog = self.bot.get_cog("Block/Unblock User")
+        if not target_cog:
+            await interaction.response.send_message("The Block/Unblock feature is temporarily unavailable.", ephemeral=True)
+            return
+        
+        modal = BlockUnblockModal(target_cog)
+        await interaction.response.send_modal(modal)   
+       
 # --- Класс Кога ControlPanel ---
 class ControlPanelCog(commands.Cog, name="Control Panel"):
     def __init__(self, bot: commands.Bot):
