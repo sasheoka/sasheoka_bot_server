@@ -378,8 +378,15 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if isinstance(metadata_list, list) and metadata_list:
             meta = metadata_list[0]
             if isinstance(meta, dict): display_name = meta.get("displayName", "N/A"); discord_handle = meta.get("discordUser"); twitter_handle = meta.get("twitterUser")
-        if twitter_handle and not twitter_handle.startswith('@'): twitter_handle = f"@{twitter_handle}"
-        return (f"**Display Name:** `{display_name}`\n"f"**Discord:** `{discord_handle or 'Not linked'}`\n"f"**Twitter/X:** `{twitter_handle or 'Not linked'}`")
+            twitter_handle_display = f"`Not linked`" # Значение по умолчанию
+        if twitter_handle:
+            # Убираем @ для создания чистого URL и добавляем его для отображения
+            clean_handle = twitter_handle.lstrip('@')
+            twitter_handle_display = f"[@{clean_handle}](https://twitter.com/{clean_handle})"
+        
+        return (f"**Display Name:** `{display_name}`\n"
+                f"**Discord:** `{discord_handle or 'Not linked'}`\n"
+                f"**Twitter/X:** {twitter_handle_display}")
     async def _get_all_wallet_balances_from_client(self, client: SnagApiClient, wallet_address: str, system_name: str) -> str: # ... (без изменений) ...
         if not client or not client._api_key: return f"⚙️ API Client for **{system_name}** is not available or keyless."
         currency_map = await self._get_currency_map(include_deleted_currencies=True) 
