@@ -4,8 +4,11 @@ from discord.ext import commands
 import logging
 from typing import Optional, Dict, Any, List
 import asyncio 
-import json # Для проверки json.loads(rule_data_field)
+import json
 import os
+# --- НАЧАЛО ИЗМЕНЕНИЙ: Импортируем константу эндпоинта ---
+from utils.snag_api_client import RULES_ENDPOINT
+# --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +17,7 @@ TARGET_ORGANIZATION_ID = os.getenv("NEW_SNAG_ORGANIZATION_ID")
 TARGET_WEBSITE_ID = os.getenv("NEW_SNAG_WEBSITE_ID")
 REQUIRED_LOYALTY_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID")
 
-MAX_RULES_TO_DISPLAY = 15 # Max rules to show in one Discord message
+MAX_RULES_TO_DISPLAY = 15
 
 class RuleNameInputModal(discord.ui.Modal, title="Find Quest ID by Name"):
     rule_name_substring_input = discord.ui.TextInput(
@@ -46,13 +49,11 @@ class RuleNameInputModal(discord.ui.Modal, title="Find Quest ID by Name"):
         if not interaction.response.is_done():
             try:
                 await interaction.response.send_message("An error occurred in the modal. Please try again.", ephemeral=True)
-            except discord.HTTPException:
-                pass
+            except discord.HTTPException: pass
         else:
             try:
                 await interaction.followup.send("An error occurred after submitting the modal.", ephemeral=True)
-            except discord.HTTPException:
-                pass
+            except discord.HTTPException: pass
 
 class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
     def __init__(self, bot: commands.Bot):
@@ -65,7 +66,7 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
     async def cog_load(self):
         logger.info(f"Cog '{self.__class__.__name__}' successfully initialized by bot.")
         if not self.snag_client or not self.snag_client._api_key:
-             logger.error(f"{self.__class__.__name__}: Snag API client is unavailable or API key is missing. Functionality will be disabled.")
+             logger.error(f"{self.__class__.__name__}: Snag API client is unavailable or API key is missing.")
 
     async def find_and_display_rule_ids(self, interaction: discord.Interaction, name_substring: str):
         if not self.snag_client or not self.snag_client._api_key:
@@ -82,10 +83,7 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
         try:
             original_message_for_edit = await interaction.original_response() 
             await original_message_for_edit.edit(content=f"⏳ Searching and verifying quests containing '{name_substring}'...")
-        except discord.NotFound:
-            logger.warning(f"Could not fetch original response for interaction {interaction.id} to edit for search.")
-        except discord.HTTPException as e:
-            logger.error(f"Failed to edit original response for search start: {e}.")
+        except (discord.NotFound, discord.HTTPException): pass
 
         while has_more_pages and pages_fetched < max_pages_to_fetch:
             pages_fetched += 1
@@ -111,7 +109,7 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 has_more_pages = False; break
 
             for rule in rules_on_page:
-                # --- 1. ПЕРВИЧНЫЕ ФИЛЬТРЫ (Быстрые) ---
+                # 1. Быстрые первичные фильтры
                 if not (isinstance(rule, dict) and isinstance(rule.get("name"), str) and name_substring.lower() in rule["name"].lower()):
                     continue
                 if rule.get("organizationId") != TARGET_ORGANIZATION_ID:
@@ -121,37 +119,31 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 if rule.get("loyaltyCurrencyId") != REQUIRED_LOYALTY_CURRENCY_ID:
                     continue 
 
-                # --- 2. ГЛУБОКАЯ ПРОВЕРКА (Медленная, но надежная) ---
-                logger.debug(f"Performing detailed verification for rule ID {rule.get('id')} ('{rule.get('name')}')...")
-                detailed_rule_response = await self.snag_client.get_loyalty_rule_details(
-                    rule.get('id'),
-                    organization_id_filter=TARGET_ORGANIZATION_ID,
-                    website_id_filter=TARGET_WEBSITE_ID
+                # --- НАЧАЛО ИЗМЕНЕНИЙ: Локальная верификация "призраков" ---
+                # Мы делаем прямой запрос к API, используя только ID квеста.
+                # Это в точности повторяет ваш ручной тест и отсеивает квесты, которые
+                # возвращают `{"data": []}` при запросе только по ID.
+                logger.debug(f"Performing localized verification for rule ID {rule.get('id')}...")
+                verification_params = {'loyaltyRuleId': rule.get('id'), 'limit': 1}
+                verification_response = await self.snag_client._make_request(
+                    "GET",
+                    RULES_ENDPOINT,
+                    params=verification_params
                 )
-
-                if not detailed_rule_response or detailed_rule_response.get("error"):
-                    logger.warning(f"Rule ID {rule.get('id')} failed verification (is a 'ghost' or error). Skipping.")
-                    continue
-
-                # ПОВТОРНАЯ, САМАЯ ВАЖНАЯ ПРОВЕРКА ПОЛЯ 'data' НА ДЕТАЛЬНОМ ОТВЕТЕ
-                detailed_data_field = detailed_rule_response.get("data")
-                is_detailed_data_valid = False
-                if isinstance(detailed_data_field, str) and detailed_data_field.strip():
-                    try:
-                        parsed_data = json.loads(detailed_data_field)
-                        if isinstance(parsed_data, dict) and parsed_data:
-                            is_detailed_data_valid = True
-                    except json.JSONDecodeError:
-                        pass
-                elif isinstance(detailed_data_field, dict) and detailed_data_field:
-                    is_detailed_data_valid = True
                 
-                if not is_detailed_data_valid:
-                    logger.warning(f"Rule ID {rule.get('id')} ('{rule.get('name')}') was a 'ghost' quest (empty 'data' field on detailed verification). Skipping.")
+                # Проверяем, что ответ не содержит ошибок и что массив 'data' не пуст
+                if (not verification_response or
+                    verification_response.get("error") or
+                    not isinstance(verification_response.get("data"), list) or
+                    not verification_response.get("data")):
+                    
+                    logger.warning(f"Rule ID {rule.get('id')} ('{rule.get('name')}') failed verification (is a 'ghost' quest). Skipping.")
                     continue
-                
-                # Если все проверки пройдены, добавляем в список
-                all_matching_rules.append(detailed_rule_response) # Используем детальный ответ
+                # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+                # Если все проверки пройдены, добавляем в список.
+                # Мы можем использовать `rule` из общего списка, т.к. он уже прошел верификацию.
+                all_matching_rules.append(rule)
             
             has_more_pages = rules_response.get("hasNextPage", False)
             if has_more_pages and rules_on_page:
@@ -160,9 +152,6 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
             else:
                 has_more_pages = False
         
-        if pages_fetched >= max_pages_to_fetch and has_more_pages:
-            logger.warning(f"Reached max_pages_to_fetch ({max_pages_to_fetch}) for rule search '{name_substring}'. Results might be incomplete.")
-
         if not all_matching_rules:
             message_content = f"ℹ️ No quests found meeting all criteria (name containing '{name_substring}', valid 'data' field, and currency ID `...{REQUIRED_LOYALTY_CURRENCY_ID[-6:]}`) for the specified Organization/Website."
             if original_message_for_edit: await original_message_for_edit.edit(content=message_content, embed=None, view=None)
@@ -189,15 +178,11 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
 
         final_embed_description = embed.description or "" 
         if description_lines: final_embed_description += "\n\n" + "\n".join(description_lines)
-        elif not all_matching_rules : 
-             final_embed_description += "\n\nNo suitable quests found to display after all filters."
         embed.description = final_embed_description
         
         footer_text = f"Found {len(all_matching_rules)} matching quest(s) meeting all criteria."
-        if len(all_matching_rules) > MAX_RULES_TO_DISPLAY or (pages_fetched >= max_pages_to_fetch and has_more_pages):
+        if len(all_matching_rules) > MAX_RULES_TO_DISPLAY:
             footer_text += f" Displaying up to {MAX_RULES_TO_DISPLAY}."
-        if pages_fetched >= max_pages_to_fetch and has_more_pages:
-            footer_text += " Max pages fetched, list may be incomplete."
         embed.set_footer(text=footer_text)
 
         try:
@@ -213,8 +198,4 @@ async def setup(bot: commands.Bot):
     if not snag_api_client or not getattr(snag_api_client, '_api_key', None):
         logger.critical("CRITICAL: FindRuleIDCog will NOT be loaded. Snag API client missing or no API key.")
         return
-    if not hasattr(snag_api_client, 'get_loyalty_rules'):
-        logger.critical("CRITICAL: FindRuleIDCog will NOT be loaded. SnagApiClient missing 'get_loyalty_rules' method.")
-        return
-        
     await bot.add_cog(FindRuleIDCog(bot))
