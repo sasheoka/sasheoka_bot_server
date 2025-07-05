@@ -113,6 +113,17 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
             for rule in rules_on_page:
                 if not (isinstance(rule, dict) and isinstance(rule.get("name"), str) and name_substring.lower() in rule["name"].lower()):
                     continue
+                
+                # --- НАЧАЛО ИЗМЕНЕНИЙ: ЯВНАЯ ПРОВЕРКА ID ОРГАНИЗАЦИИ И САЙТА ---
+                # Это дополнительная защита на случай, если API-фильтры не сработают или вернут лишнее.
+                if rule.get("organizationId") != TARGET_ORGANIZATION_ID:
+                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to organizationId mismatch (is '{rule.get('organizationId')}', expected '{TARGET_ORGANIZATION_ID}').")
+                    continue
+                
+                if rule.get("websiteId") != TARGET_WEBSITE_ID:
+                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to websiteId mismatch (is '{rule.get('websiteId')}', expected '{TARGET_WEBSITE_ID}').")
+                    continue
+                # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
                 # --- ПРОВЕРКА ПОЛЯ "data" ---
                 rule_data_field = rule.get("data")
@@ -153,7 +164,7 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
         if not all_matching_rules:
             message_content = f"ℹ️ No quests found meeting all criteria (name containing '{name_substring}', valid 'data' field, and currency ID `...{REQUIRED_LOYALTY_CURRENCY_ID[-6:]}`) for the specified Organization/Website."
             if original_message_for_edit: await original_message_for_edit.edit(content=message_content, embed=None, view=None)
-            else: await interaction.followup.send(content=message_content, ephemeral=True)
+            else: await interaction.followup.send(content=content_to_send, ephemeral=True) # <-- Был баг, использовалась неопределенная переменная
             return
 
         embed = discord.Embed(
@@ -169,8 +180,8 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 break
             rule_name = rule_item.get("name", "N/A")
             rule_id = rule_item.get("id", "N/A")
-            visibility_status = "❓ Unknown" # Изменено на более короткое
-            if "hideInUi" in rule_item: # Явная проверка наличия ключа
+            visibility_status = "❓ Unknown"
+            if "hideInUi" in rule_item: 
                 visibility_status = "🙈 Hidden" if rule_item["hideInUi"] else "👁️ Visible"
             description_lines.append(f"**{i+1}. {rule_name}** ({visibility_status})\n   ID: `{rule_id}`")
 
