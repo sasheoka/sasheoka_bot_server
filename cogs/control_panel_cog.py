@@ -369,20 +369,35 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
             account_data = account_data_response["data"][0]; user_info = account_data.get("user"); wallet_address = user_info.get("walletAddress") if isinstance(user_info, dict) else None
             if wallet_address: logger.info(f"[{getattr(client, '_client_name', '')}] Found wallet: {wallet_address} for {handle_type} {handle_value}"); return wallet_address
         logger.warning(f"[{getattr(client, '_client_name', '')}] Wallet not found for {handle_type} {handle_value}. Response: {str(account_data_response)[:200]}"); return None
+    
     async def _find_socials_by_wallet(self, client: SnagApiClient, target_address: str) -> str: # ... (без изменений) ...
-        if not client or not client._api_key: return "⚙️ API Client instance is not available or keyless."
+        if not client or not client._api_key: 
+            return "⚙️ API Client instance is not available or keyless."
         logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Finding socials for {target_address}"); account_data_response = await client.get_account_by_wallet(target_address)
-        if not account_data_response: return "⚙️ Error contacting API or API key/config missing."
-        if not isinstance(account_data_response.get("data"), list) or not account_data_response["data"]: return f"❌ No account data found for `{target_address}`."
+        if not account_data_response: 
+            return "⚙️ Error contacting API or API key/config missing."
+        if not isinstance(account_data_response.get("data"), list) or not account_data_response["data"]: 
+            return f"❌ No account data found for `{target_address}`."
         account_data = account_data_response["data"][0]; user_info = account_data.get("user", {}); metadata_list = user_info.get("userMetadata", []); display_name = "N/A"; discord_handle = None; twitter_handle = None
         if isinstance(metadata_list, list) and metadata_list:
             meta = metadata_list[0]
-            if isinstance(meta, dict): display_name = meta.get("displayName", "N/A"); discord_handle = meta.get("discordUser"); twitter_handle = meta.get("twitterUser")
-            twitter_handle_display = f"`Not linked`" # Значение по умолчанию
+            if isinstance(meta, dict): 
+                display_name = meta.get("displayName", "N/A")
+                discord_handle = meta.get("discordUser")
+                twitter_handle = meta.get("twitterUser")
+
+        # Очищаем данные от "мусорных" символов разметки
+        if display_name:
+            display_name = display_name.replace('`', '').replace('*', '').strip() or "N/A"
+        if discord_handle:
+            discord_handle = discord_handle.replace('`', '').replace('*', '').strip()
+
+        # Форматируем ссылку на Twitter и убираем превью
+        twitter_handle_display = f"`Not linked`"
         if twitter_handle:
-            # Убираем @ для создания чистого URL и добавляем его для отображения
             clean_handle = twitter_handle.lstrip('@')
-            twitter_handle_display = f"[@{clean_handle}](https://twitter.com/{clean_handle})"
+            # Оборачиваем ссылку в <...> чтобы убрать превью
+            twitter_handle_display = f"[@{clean_handle}](<https://twitter.com/{clean_handle}>)"
         
         return (f"**Display Name:** `{display_name}`\n"
                 f"**Discord:** `{discord_handle or 'Not linked'}`\n"
