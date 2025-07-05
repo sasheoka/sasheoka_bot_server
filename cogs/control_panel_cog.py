@@ -386,22 +386,29 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
                 discord_handle = meta.get("discordUser")
                 twitter_handle = meta.get("twitterUser")
 
-        # Очищаем данные от "мусорных" символов разметки
-        if display_name:
-            display_name = display_name.replace('`', '').replace('*', '').strip() or "N/A"
-        if discord_handle:
-            discord_handle = discord_handle.replace('`', '').replace('*', '').strip()
+        # Обрабатываем displayName: если оно пустое или содержит только пробелы, пишем "Not set"
+        if display_name and display_name.strip():
+            display_name_formatted = f"`{display_name.strip()}`"
+        else:
+            display_name_formatted = "Not set"  # Без кавычек
 
-        # Форматируем ссылку на Twitter и убираем превью
-        twitter_handle_display = f"`Not linked`"
+        # Обрабатываем discordUser
+        if discord_handle and discord_handle.strip():
+            discord_handle_formatted = f"`{discord_handle.strip()}`"
+        else:
+            discord_handle_formatted = "Not linked" # Без кавычек
+
+        # Ссылка на Twitter остается как есть, она работает правильно
+        twitter_handle_display = "`Not linked`"
         if twitter_handle:
             clean_handle = twitter_handle.lstrip('@')
-            # Оборачиваем ссылку в <...> чтобы убрать превью
             twitter_handle_display = f"[@{clean_handle}](<https://twitter.com/{clean_handle}>)"
         
-        return (f"**Display Name:** `{display_name}`\n"
-                f"**Discord:** `{discord_handle or 'Not linked'}`\n"
+        # Собираем финальный ответ
+        return (f"**Display Name:** {display_name_formatted}\n"
+                f"**Discord:** {discord_handle_formatted}\n"
                 f"**Twitter/X:** {twitter_handle_display}")
+        
     async def _get_all_wallet_balances_from_client(self, client: SnagApiClient, wallet_address: str, system_name: str) -> str: # ... (без изменений) ...
         if not client or not client._api_key: return f"⚙️ API Client for **{system_name}** is not available or keyless."
         currency_map = await self._get_currency_map(include_deleted_currencies=True) 
