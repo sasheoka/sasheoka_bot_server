@@ -114,41 +114,45 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 if not (isinstance(rule, dict) and isinstance(rule.get("name"), str) and name_substring.lower() in rule["name"].lower()):
                     continue
                 
-                # --- НАЧАЛО ИЗМЕНЕНИЙ: ЯВНАЯ ПРОВЕРКА ID ОРГАНИЗАЦИИ И САЙТА ---
-                # Это дополнительная защита на случай, если API-фильтры не сработают или вернут лишнее.
                 if rule.get("organizationId") != TARGET_ORGANIZATION_ID:
-                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to organizationId mismatch (is '{rule.get('organizationId')}', expected '{TARGET_ORGANIZATION_ID}').")
                     continue
                 
                 if rule.get("websiteId") != TARGET_WEBSITE_ID:
-                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to websiteId mismatch (is '{rule.get('websiteId')}', expected '{TARGET_WEBSITE_ID}').")
                     continue
-                # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-                # --- ПРОВЕРКА ПОЛЯ "data" ---
                 rule_data_field = rule.get("data")
                 has_valid_and_non_empty_data = False
                 if isinstance(rule_data_field, str) and rule_data_field.strip(): 
                     try:
                         parsed_data = json.loads(rule_data_field)
-                        if isinstance(parsed_data, dict) and parsed_data: # Проверка, что это непустой словарь
+                        if isinstance(parsed_data, dict) and parsed_data:
                             has_valid_and_non_empty_data = True
-                        else:
-                            logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): 'data' field is valid JSON but resulted in an empty dict or non-dict. Parsed type: {type(parsed_data)}. Skipping.")
                     except json.JSONDecodeError:
-                        logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): 'data' field is not valid JSON: {rule_data_field[:100]}... Skipping.")
-                elif isinstance(rule_data_field, dict) and rule_data_field: # Если API вернул уже распарсенный непустой объект
+                        pass
+                elif isinstance(rule_data_field, dict) and rule_data_field:
                     has_valid_and_non_empty_data = True
                 
                 if not has_valid_and_non_empty_data:
-                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to missing, empty, or invalid 'data' field.")
-                    continue # Пропускаем это правило
+                    continue
 
-                # --- ПРОВЕРКА НА loyaltyCurrencyId ---
                 if rule.get("loyaltyCurrencyId") != REQUIRED_LOYALTY_CURRENCY_ID:
-                    logger.debug(f"Rule ID {rule.get('id')} ('{rule.get('name')}'): Skipped due to loyaltyCurrencyId mismatch (is '{rule.get('loyaltyCurrencyId')}', expected '{REQUIRED_LOYALTY_CURRENCY_ID}').")
                     continue 
                 
+                # --- НАЧАЛО ИЗМЕНЕНИЙ: ПРОВЕРКА НА "ПРИЗРАЧНЫЕ" КВЕСТЫ ---
+                # Делаем контрольный запрос по ID, чтобы убедиться, что API отдает данные по этому квесту индивидуально.
+                # Это решает проблему, когда квест есть в общем списке, но пуст при прямом запросе.
+                logger.debug(f"Performing verification check for rule ID {rule.get('id')}...")
+                detailed_rule_response = await self.snag_client.get_loyalty_rule_details(
+                    rule.get('id'),
+                    organization_id_filter=TARGET_ORGANIZATION_ID,
+                    website_id_filter=TARGET_WEBSITE_ID
+                )
+
+                if not detailed_rule_response or detailed_rule_response.get("error"):
+                    logger.warning(f"Rule ID {rule.get('id')} ('{rule.get('name')}') failed verification check (is a 'ghost' rule). Skipping.")
+                    continue
+                # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
                 all_matching_rules.append(rule)
             
             has_more_pages = rules_response.get("hasNextPage", False)
@@ -164,7 +168,7 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
         if not all_matching_rules:
             message_content = f"ℹ️ No quests found meeting all criteria (name containing '{name_substring}', valid 'data' field, and currency ID `...{REQUIRED_LOYALTY_CURRENCY_ID[-6:]}`) for the specified Organization/Website."
             if original_message_for_edit: await original_message_for_edit.edit(content=message_content, embed=None, view=None)
-            else: await interaction.followup.send(content=content_to_send, ephemeral=True) # <-- Был баг, использовалась неопределенная переменная
+            else: await interaction.followup.send(content=message_content, ephemeral=True)
             return
 
         embed = discord.Embed(
