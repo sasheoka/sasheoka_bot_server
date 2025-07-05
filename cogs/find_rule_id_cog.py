@@ -81,15 +81,15 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
         original_message_for_edit: Optional[discord.WebhookMessage] = None
         try:
             original_message_for_edit = await interaction.original_response() 
-            await original_message_for_edit.edit(content=f"⏳ Searching for quests containing '{name_substring}'...")
+            await original_message_for_edit.edit(content=f"⏳ Searching and verifying quests containing '{name_substring}'...")
         except discord.NotFound:
-            logger.warning(f"Could not fetch original response for interaction {interaction.id} to edit for search. Will send new followups.")
+            logger.warning(f"Could not fetch original response for interaction {interaction.id} to edit for search.")
         except discord.HTTPException as e:
-            logger.error(f"Failed to edit original response for search start: {e}. Will send new followups.")
+            logger.error(f"Failed to edit original response for search start: {e}.")
 
         while has_more_pages and pages_fetched < max_pages_to_fetch:
             pages_fetched += 1
-            logger.info(f"Fetching page {pages_fetched} of loyalty rules for name '{name_substring}' (org: {TARGET_ORGANIZATION_ID}, site: {TARGET_WEBSITE_ID}, after: {starting_after})")
+            logger.info(f"Fetching page {pages_fetched} of loyalty rules for name '{name_substring}'...")
             
             rules_response = await self.snag_client.get_loyalty_rules(
                 limit=1000, 
@@ -111,37 +111,18 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 has_more_pages = False; break
 
             for rule in rules_on_page:
+                # --- 1. ПЕРВИЧНЫЕ ФИЛЬТРЫ (Быстрые) ---
                 if not (isinstance(rule, dict) and isinstance(rule.get("name"), str) and name_substring.lower() in rule["name"].lower()):
                     continue
-                
                 if rule.get("organizationId") != TARGET_ORGANIZATION_ID:
                     continue
-                
                 if rule.get("websiteId") != TARGET_WEBSITE_ID:
                     continue
-
-                rule_data_field = rule.get("data")
-                has_valid_and_non_empty_data = False
-                if isinstance(rule_data_field, str) and rule_data_field.strip(): 
-                    try:
-                        parsed_data = json.loads(rule_data_field)
-                        if isinstance(parsed_data, dict) and parsed_data:
-                            has_valid_and_non_empty_data = True
-                    except json.JSONDecodeError:
-                        pass
-                elif isinstance(rule_data_field, dict) and rule_data_field:
-                    has_valid_and_non_empty_data = True
-                
-                if not has_valid_and_non_empty_data:
-                    continue
-
                 if rule.get("loyaltyCurrencyId") != REQUIRED_LOYALTY_CURRENCY_ID:
                     continue 
-                
-                # --- НАЧАЛО ИЗМЕНЕНИЙ: ПРОВЕРКА НА "ПРИЗРАЧНЫЕ" КВЕСТЫ ---
-                # Делаем контрольный запрос по ID, чтобы убедиться, что API отдает данные по этому квесту индивидуально.
-                # Это решает проблему, когда квест есть в общем списке, но пуст при прямом запросе.
-                logger.debug(f"Performing verification check for rule ID {rule.get('id')}...")
+
+                # --- 2. ГЛУБОКАЯ ПРОВЕРКА (Медленная, но надежная) ---
+                logger.debug(f"Performing detailed verification for rule ID {rule.get('id')} ('{rule.get('name')}')...")
                 detailed_rule_response = await self.snag_client.get_loyalty_rule_details(
                     rule.get('id'),
                     organization_id_filter=TARGET_ORGANIZATION_ID,
@@ -149,11 +130,28 @@ class FindRuleIDCog(commands.Cog, name="Find Quest ID"):
                 )
 
                 if not detailed_rule_response or detailed_rule_response.get("error"):
-                    logger.warning(f"Rule ID {rule.get('id')} ('{rule.get('name')}') failed verification check (is a 'ghost' rule). Skipping.")
+                    logger.warning(f"Rule ID {rule.get('id')} failed verification (is a 'ghost' or error). Skipping.")
                     continue
-                # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-                all_matching_rules.append(rule)
+                # ПОВТОРНАЯ, САМАЯ ВАЖНАЯ ПРОВЕРКА ПОЛЯ 'data' НА ДЕТАЛЬНОМ ОТВЕТЕ
+                detailed_data_field = detailed_rule_response.get("data")
+                is_detailed_data_valid = False
+                if isinstance(detailed_data_field, str) and detailed_data_field.strip():
+                    try:
+                        parsed_data = json.loads(detailed_data_field)
+                        if isinstance(parsed_data, dict) and parsed_data:
+                            is_detailed_data_valid = True
+                    except json.JSONDecodeError:
+                        pass
+                elif isinstance(detailed_data_field, dict) and detailed_data_field:
+                    is_detailed_data_valid = True
+                
+                if not is_detailed_data_valid:
+                    logger.warning(f"Rule ID {rule.get('id')} ('{rule.get('name')}') was a 'ghost' quest (empty 'data' field on detailed verification). Skipping.")
+                    continue
+                
+                # Если все проверки пройдены, добавляем в список
+                all_matching_rules.append(detailed_rule_response) # Используем детальный ответ
             
             has_more_pages = rules_response.get("hasNextPage", False)
             if has_more_pages and rules_on_page:
