@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Константы, которые не зависят от переменных окружения
 EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 INVITE_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{10}$")
+GET_USER_ENDPOINT = "/api/users"
 PARTICIPANTS_LIST_DELETION_DELAY_SECONDS = 3600
 
 MATCHSTICKS_CURRENCY_ID = os.getenv("MATCHSTICKS_CURRENCY_ID", "")
@@ -140,6 +141,41 @@ class PokerCog(commands.Cog, name="Poker"):
             logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Account found, but no valid EVM wallet is linked.")
             return False, "No valid EVM wallet address (e.g., 0x...) linked to your Discord account in the Snag Loyalty System.", None
 
+        # Проверка на блокировку кошелька
+        response = await self.snag_client._make_request(
+            "GET",
+            GET_USER_ENDPOINT,
+            params={"walletAddress": wallet_address}
+        )
+
+        if not response or response.get("error"):
+            error_message = response.get("message", "API request failed.") if response else "No response from API."
+            logger.error(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): API Error during block check: {error_message}")
+            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
+
+        if not isinstance(response.get("data"), list) or not response["data"]:
+            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): No user data found for wallet {wallet_address} during block check.")
+            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
+
+        try:
+            user_object = response["data"][0]
+            user_metadata_list = user_object.get("userMetadata", [])
+            if not isinstance(user_metadata_list, list) or not user_metadata_list:
+                logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): User found, but metadata is missing for wallet {wallet_address}.")
+                return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
+
+            metadata = user_metadata_list[0]
+            is_blocked = metadata.get("isBlocked", False)
+
+            if is_blocked:
+                logger.info(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Wallet {wallet_address} is blocked.")
+                return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
+
+        except (IndexError, KeyError, TypeError) as e:
+            logger.error(f"Error parsing block check API response for {wallet_address} (Event {event_id}): {e}. Response: {response}", exc_info=True)
+            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
+
+        # Проверка баланса Matchsticks
         min_matchsticks = self.event_configs.get(event_id, Decimal('3'))
         balance = await self._get_wallet_balance(wallet_address)
         if balance < min_matchsticks:
