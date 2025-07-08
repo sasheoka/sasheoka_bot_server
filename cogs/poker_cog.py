@@ -131,8 +131,17 @@ class PokerCog(commands.Cog, name="Poker"):
         discord_handle = user.name
         account_data: Optional[dict] = await self.snag_client.get_account_by_social("discordUser", discord_handle)
 
-        if not account_data or not isinstance(account_data.get("data"), list) or not account_data["data"]:
-            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Snag API found no linked Discord account.")
+        # 1. Проверяем на наличие ЛЮБОЙ ошибки от API клиента (500, таймаут, и т.д.)
+        if not account_data or account_data.get("error"):
+            error_details = account_data.get("message", "No details") if account_data else "No response"
+            logger.error(f"Eligibility check failed for '{discord_handle}' (Event {event_id}) due to an API error: {error_details}")
+            # Отправляем простое сообщение пользователю
+            return False, "Something went wrong, please try again.", None
+
+        # 2. Если ошибки не было, проверяем, что данные о пользователе действительно пришли
+        if not isinstance(account_data.get("data"), list) or not account_data["data"]:
+            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Snag API found no linked Discord account (API call was successful but returned no data).")
+            # Отправляем инструкцию по привязке
             return False, "Please link your Discord account to the Snag Loyalty System. If already linked, try re-linking.\n https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social", None
 
         user_info = account_data["data"][0].get("user", {})
