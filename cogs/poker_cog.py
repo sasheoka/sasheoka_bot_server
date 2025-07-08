@@ -128,7 +128,7 @@ class PokerCog(commands.Cog, name="Poker"):
             logger.error(f"Eligibility check failed for '{user.name}' (Event {event_id}): SnagApiClient is not configured.")
             return False, "API client not configured. Please contact an admin.", None
 
-        discord_handle = user.name if user.discriminator == '0' else f"{user.name}#{user.discriminator}"
+        discord_handle = user.name
         account_data: Optional[dict] = await self.snag_client.get_account_by_social("discordUser", discord_handle)
 
         if not account_data or not isinstance(account_data.get("data"), list) or not account_data["data"]:
@@ -252,15 +252,15 @@ class PokerCog(commands.Cog, name="Poker"):
         message_content_for_ping: Optional[str] = None
 
         if interaction.guild:
-            role_to_mention = interaction.guild.get_role(MENTION_ROLE_ID)
-            if role_to_mention:
-                message_content_for_ping = f"{role_to_mention.mention}"
-            else:
-                logger.warning(f"Role with ID {MENTION_ROLE_ID} not found on server {interaction.guild.id}. No role will be pinged.")
-        else:
-            logger.warning("Poker event creation called outside of a guild. Cannot ping role.")
+        #    role_to_mention = interaction.guild.get_role(MENTION_ROLE_ID)
+        #    if role_to_mention:
+        #        message_content_for_ping = f"{role_to_mention.mention}"
+        #    else:
+        #        logger.warning(f"Role with ID {MENTION_ROLE_ID} not found on server {interaction.guild.id}. No role will be pinged.")
+        #else:
+        #    logger.warning("Poker event creation called outside of a guild. Cannot ping role.")
 
-        embed = discord.Embed(
+            embed = discord.Embed(
             title="🃏 Poker Event 🃏",
             description=(
                 f"A new PokerNow game has been set up!\n\n"
