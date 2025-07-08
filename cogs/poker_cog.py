@@ -28,7 +28,7 @@ if not MATCHSTICKS_CURRENCY_ID:
     logger.warning("MATCHSTICKS_CURRENCY_ID не установлена. Проверка баланса может не работать.")
     
 try:
-    POKER_CHANNEL_ID = 1384466812766257193
+    POKER_CHANNEL_ID = int(os.getenv("POKER_CHANNEL_ID", "0"))
 except (ValueError, TypeError):
     POKER_CHANNEL_ID = 0
     logger.warning("POKER_CHANNEL_ID не задан или имеет неверный формат. Установлено значение 0.")
