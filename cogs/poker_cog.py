@@ -269,7 +269,7 @@ class PokerCog(commands.Cog, name="Poker"):
         else:
             logger.warning("Poker event creation called outside of a guild. Cannot ping role.")
 
-            embed = discord.Embed(
+        embed = discord.Embed(
             title="🃏 Poker Event 🃏",
             description=(
                 f"A new PokerNow game has been set up!\n\n"
