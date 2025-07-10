@@ -583,7 +583,16 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if not self.snag_client or not self.snag_client._api_key: await interaction.followup.send("⚙️ Main API Client is not available.", ephemeral=True); return
         logger.info(f"User {interaction.user.id} requested quest statistics for wallet: {target_address}")
         all_txns, warning_msg_txn, total_matchsticks_credits, _ = await self._fetch_and_process_all_transactions(self.snag_client, target_address)
-        completed_quest_executions = [tx for tx in all_txns if tx.get("direction") == "credit" and (tx.get("loyaltyTransaction") or {}).get("loyaltyRule", {}).get("name")]
+        completed_quest_executions = []
+        for tx in all_txns:
+            if tx.get("direction") == "credit":
+                loyalty_transaction = tx.get("loyaltyTransaction")
+                # Проверяем, что loyalty_transaction это словарь, а не None
+                if isinstance(loyalty_transaction, dict):
+                    loyalty_rule = loyalty_transaction.get("loyaltyRule")
+                    # Проверяем, что loyalty_rule это словарь и у него есть поле name
+                    if isinstance(loyalty_rule, dict) and loyalty_rule.get("name"):
+                        completed_quest_executions.append(tx)
         num_total_completed_executions = len(completed_quest_executions)
         all_available_rules_api: List[Dict[str, Any]] = []; last_rule_id: Optional[str] = None; has_more_rules_pages = True; api_rule_page_count = 0; warning_msg_rules = ""
         while has_more_rules_pages and api_rule_page_count < MAX_API_PAGES_TO_FETCH:
