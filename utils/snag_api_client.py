@@ -20,6 +20,8 @@ USER_METADATAS_ENDPOINT = "/api/users/metadatas"
 SNAG_API_KEY_HEADER = "X-API-KEY"
 logger = logging.getLogger(__name__)
 
+BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+
 class SnagApiClient:
     def __init__(self, session: aiohttp.ClientSession, api_key: Optional[str],
                  organization_id: Optional[str], website_id: Optional[str],
@@ -47,8 +49,6 @@ class SnagApiClient:
         
         request_params = params.copy() if params is not None else {} 
         
-        # Проверяем базовый эндпоинт для добавления глобальных orgId/websiteId из клиента,
-        # только если они не были явно переданы в params для этого запроса.
         base_endpoint_for_check_str = "/".join(endpoint.split('/')[0:4])
         if base_endpoint_for_check_str in self._endpoints_with_org_site_in_query:
             if self._organization_id and 'organizationId' not in request_params:
@@ -56,7 +56,12 @@ class SnagApiClient:
             if self._website_id and 'websiteId' not in request_params:
                  request_params['websiteId'] = self._website_id
         
-        headers = {SNAG_API_KEY_HEADER: self._api_key, "Content-Type": "application/json"}
+        # Добавляем заголовок User-Agent, чтобы имитировать браузер.
+        headers = {
+            SNAG_API_KEY_HEADER: self._api_key, 
+            "Content-Type": "application/json",
+            "User-Agent": BROWSER_USER_AGENT 
+        }
         url = f"{self._base_url}{endpoint}"
         response_text = ""
         try:
