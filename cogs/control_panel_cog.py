@@ -252,7 +252,7 @@ class BadgePaginatorView(discord.ui.View):
 # InfoPanelView ... (без изменений, ID кнопок могут остаться v7 или обновлены на v8 для консистентности)
 class InfoPanelView(discord.ui.View):
     def __init__(self, cog_instance: "ControlPanelCog"):
-        super().__init__(timeout=86400.0)
+        super().__init__(timeout=0)
         self.cog = cog_instance
         # Получаем доступ к боту через ког, чтобы найти другой ког
         self.bot = cog_instance.bot
@@ -373,13 +373,11 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
         if response and not response.get("error") and isinstance(response.get("data"), list) and response["data"]:
             return response["data"][0]
         
-        # Логируем ошибку, если она была
         if response and response.get("error"):
             logger.error(f"[{getattr(client, '_client_name', 'SnagClient')}] API error getting user by {identifier_type}={identifier_value}: {response}")
         
         return None
 
-    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
     async def handle_find_wallet_logic(self, interaction: discord.Interaction, discord_h: Optional[str], twitter_h: Optional[str]):
         discord_h = discord_h.strip() if discord_h else None
         twitter_h = twitter_h.strip().lstrip('@') if twitter_h else None
@@ -414,7 +412,6 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
             
         await interaction.followup.send(final_message, ephemeral=True)
 
-    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
     def _extract_socials_from_user_data(self, user_data: Optional[Dict[str, Any]]) -> str:
         """Внутренний хелпер для форматирования соцсетей из объекта пользователя."""
         if not user_data:
@@ -447,7 +444,6 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
                 f"**Discord:** {discord_handle_formatted}\n"
                 f"**Twitter/X:** {twitter_handle_display}")
 
-    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
     async def handle_find_socials_logic(self, interaction: discord.Interaction, address_val: str):
         target_address = address_val.strip().lower()
         if not EVM_ADDRESS_PATTERN.match(target_address):
