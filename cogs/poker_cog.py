@@ -524,6 +524,138 @@ class PokerCog(commands.Cog, name="Poker"):
             # for example, if the interaction token has expired.
             logger.error(f"Failed to send error response for /poker command by {interaction.user.name}: {e}")
 
+    @app_commands.command(name="pokerdccheck", description="Check Discord account details for participants in a poker event file, sorted by Member Since.")
+    @app_commands.checks.has_any_role("Ranger")
+    @app_commands.describe(txt_file="Text file containing poker event participants (e.g., poker_participants_*.txt)")
+    @is_admin_in_guild()
+    async def pokerdc_check_command(self, interaction: discord.Interaction, txt_file: discord.Attachment):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        # Проверка, что файл имеет расширение .txt
+        if not txt_file.filename.endswith('.txt'):
+            await interaction.followup.send("⚠️ File must be a .txt file.", ephemeral=True)
+            return
+
+        try:
+            # Чтение содержимого файла
+            file_content = await txt_file.read()
+            lines = file_content.decode('utf-8').splitlines()
+            discord_handles = []
+
+            # Извлечение Discord Handle из таблицы (предполагается, что это второй столбец)
+            for line in lines[3:]:  # Пропускаем заголовок и разделители
+                if line.strip() and not line.startswith("---"):
+                    try:
+                        # Разделяем строку по разделителю "|"
+                        columns = [col.strip() for col in line.split("|")]
+                        if len(columns) >= 4:  # Убедимся, что строка содержит достаточно столбцов
+                            discord_handle = columns[1]  # Discord Handle находится во втором столбце
+                            discord_handles.append(discord_handle)
+                    except IndexError:
+                        logger.warning(f"Invalid line format in participant file: {line}")
+                        continue
+
+            if not discord_handles:
+                await interaction.followup.send("⚠️ No valid Discord Handles found in the file.", ephemeral=True)
+                return
+
+            # Подготовка списка для хранения данных о пользователях
+            user_data = []
+
+            # Проверка каждого Discord Handle
+            guild = interaction.guild
+            if not guild:
+                await interaction.followup.send("⚠️ This command must be run in a guild.", ephemeral=True)
+                return
+
+            for handle in discord_handles:
+                member = None
+                for guild_member in guild.members:
+                    guild_handle = guild_member.name if guild_member.discriminator == '0' else f"{guild_member.name}#{guild_member.discriminator}"
+                    if guild_handle == handle:
+                        member = guild_member
+                        break
+
+                if member:
+                    member_since = member.joined_at
+                    member_since_str = member.joined_at.strftime("%Y-%m-%d %H:%M:%S UTC") if member.joined_at else "Unknown"
+                    joined_discord = member.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if member.created_at else "Unknown"
+                    user_data.append({
+                        "handle": handle,
+                        "member_since": member_since,  # Сохраняем объект datetime для сортировки
+                        "member_since_str": member_since_str,
+                        "joined_discord": joined_discord
+                    })
+                else:
+                    user_data.append({
+                        "handle": handle,
+                        "member_since": None,  # None для "Not found" (будет в конце при сортировке)
+                        "member_since_str": "Not found",
+                        "joined_discord": "Not found"
+                    })
+                    logger.warning(f"User with Discord Handle {handle} not found in guild {guild.id}.")
+
+            # Сортировка по member_since (None идёт в конец)
+            user_data.sort(key=lambda x: (x["member_since"] is None, x["member_since"]))
+
+            # Формирование таблицы результатов
+            table_lines = [
+                f"Discord Account Check - Generated at {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                "-----------------------------------------------------------------------------------------------------",
+                f"{'Discord Handle':<30} | {'Member Since':<30} | {'Joined Discord':<30}",
+                "-----------------------------------------------------------------------------------------------------"
+            ]
+
+            for user in user_data:
+                table_lines.append(
+                    f"{user['handle']:<30} | {user['member_since_str']:<30} | {user['joined_discord']:<30}"
+                )
+
+            # Создание файла с результатами
+            table_content = "\n".join(table_lines)
+            file_bytes = table_content.encode('utf-8')
+            data_stream = io.BytesIO(file_bytes)
+            timestamp_str = discord.utils.utcnow().strftime("%Y%m%d_%H%M%S")
+            filename = f"discord_account_check_{timestamp_str}.txt"
+            discord_file = discord.File(fp=data_stream, filename=filename)
+
+            # Подготовка эмбеда
+            embed = discord.Embed(
+                title="🔍 Discord Account Check Results",
+                description=(
+                    f"Checked Discord account details for participants from the provided file, sorted by Member Since.\n"
+                    f"Total Discord Handles processed: {len(discord_handles)}\n"
+                    f"Results are attached as `{filename}`."
+                ),
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.set_footer(text=f"Generated by {interaction.user.display_name}")
+
+            # Отправка результата
+            await interaction.followup.send(embed=embed, file=discord_file, ephemeral=True)
+            logger.info(f"Discord account check completed for {len(discord_handles)} handles by {interaction.user.name}. File: {filename}")
+
+        except Exception as e:
+            logger.error(f"Error processing /pokerdccheck command: {e}", exc_info=True)
+            await interaction.followup.send("⚙️ An unexpected error occurred while processing the file.", ephemeral=True)
+
+    @pokerdc_check_command.error
+    async def pokerdc_check_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        msg_to_send = "⚙️ An unexpected error occurred while processing the /pokerdccheck command."
+        
+        if isinstance(error, app_commands.MissingAnyRole):
+            msg_to_send = "⛔ You do not have the required 'Ranger' role to use this command."
+        elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.Forbidden):
+            msg_to_send = "⚠️ I don't have permissions to perform this action here. Please check my channel permissions."
+        else:
+            logger.error(f"Error in /pokerdccheck command invocation by {interaction.user.name}: {error}", exc_info=True)
+        
+        try:
+            await interaction.followup.send(msg_to_send, ephemeral=True)
+        except discord.HTTPException as e:
+            logger.error(f"Failed to send error response for /pokerdccheck command by {interaction.user.name}: {e}")    
+
 async def setup(bot: commands.Bot):
     snag_api_client = getattr(bot, 'snag_client', None)
     if not snag_api_client or not getattr(snag_api_client, '_api_key', None):
