@@ -123,68 +123,46 @@ class PokerCog(commands.Cog, name="Poker"):
             logger.error(f"Error fetching balance for {wallet_address}: {e}", exc_info=True)
             return Decimal('0')
 
+    # --- ИЗМЕНЕННЫЙ МЕТОД ---
     async def _check_user_eligibility(self, user: discord.User, event_id: int) -> Tuple[bool, str, Optional[str]]:
         if not self.snag_client or not self.snag_client._api_key:
             logger.error(f"Eligibility check failed for '{user.name}' (Event {event_id}): SnagApiClient is not configured.")
             return False, "API client not configured. Please contact an admin.", None
 
         discord_handle = user.name
-        account_data: Optional[dict] = await self.snag_client.get_account_by_social("discordUser", discord_handle)
+        
+        # --- ШАГ 1: Идентифицируем пользователя через get_user_data ---
+        user_data_response = await self.snag_client.get_user_data(discord_user=discord_handle)
 
-        # 1. Проверяем на наличие ЛЮБОЙ ошибки от API клиента (500, таймаут, и т.д.)
-        if not account_data or account_data.get("error"):
-            error_details = account_data.get("message", "No details") if account_data else "No response"
+        if not user_data_response or user_data_response.get("error"):
+            error_details = user_data_response.get("message", "No details") if user_data_response else "No response"
             logger.error(f"Eligibility check failed for '{discord_handle}' (Event {event_id}) due to an API error: {error_details}")
-            # Отправляем простое сообщение пользователю
             return False, "Something went wrong, please try again.", None
 
-        # 2. Если ошибки не было, проверяем, что данные о пользователе действительно пришли
-        if not isinstance(account_data.get("data"), list) or not account_data["data"]:
-            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Snag API found no linked Discord account (API call was successful but returned no data).")
-            # Отправляем инструкцию по привязке
+        if not isinstance(user_data_response.get("data"), list) or not user_data_response["data"]:
+            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Snag API found no linked Discord account.")
             return False, "Please link your Discord account to the Snag Loyalty System. If already linked, try re-linking.\n https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social", None
 
-        user_info = account_data["data"][0].get("user", {})
-        wallet_address = user_info.get("walletAddress")
+        # --- ШАГ 2: Извлекаем данные из ответа ---
+        user_object = user_data_response["data"][0]
+        wallet_address = user_object.get("walletAddress")
+        
         if not wallet_address or not EVM_ADDRESS_PATTERN.match(wallet_address):
             logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Account found, but no valid EVM wallet is linked.")
             return False, "No valid EVM wallet address (e.g., 0x...) linked to your Discord account in the Snag Loyalty System.", None
 
-        # Проверка на блокировку кошелька
-        response = await self.snag_client._make_request(
-            "GET",
-            GET_USER_ENDPOINT,
-            params={"walletAddress": wallet_address}
-        )
+        # --- ШАГ 3: Проверяем статус блокировки из уже полученных данных ---
+        user_metadata_list = user_object.get("userMetadata", [])
+        is_blocked = False
+        if user_metadata_list and isinstance(user_metadata_list, list):
+            is_blocked = user_metadata_list[0].get("isBlocked", False)
 
-        if not response or response.get("error"):
-            error_message = response.get("message", "API request failed.") if response else "No response from API."
-            logger.error(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): API Error during block check: {error_message}")
-            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
-
-        if not isinstance(response.get("data"), list) or not response["data"]:
-            logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): No user data found for wallet {wallet_address} during block check.")
-            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
-
-        try:
-            user_object = response["data"][0]
-            user_metadata_list = user_object.get("userMetadata", [])
-            if not isinstance(user_metadata_list, list) or not user_metadata_list:
-                logger.warning(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): User found, but metadata is missing for wallet {wallet_address}.")
-                return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
-
-            metadata = user_metadata_list[0]
-            is_blocked = metadata.get("isBlocked", False)
-
-            if is_blocked:
-                logger.info(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Wallet {wallet_address} is blocked.")
-                return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
-
-        except (IndexError, KeyError, TypeError) as e:
-            logger.error(f"Error parsing block check API response for {wallet_address} (Event {event_id}): {e}. Response: {response}", exc_info=True)
-            return False, "Something went wrong, please create https://discord.com/channels/1161497860915875900/1243221599142805626", None
-
-        # Проверка баланса Matchsticks
+        if is_blocked:
+            logger.info(f"Eligibility check failed for '{discord_handle}' (Event {event_id}): Wallet {wallet_address} is blocked.")
+            # Сообщение пользователю изменено, чтобы не давать лишней информации
+            return False, "Something went wrong, please create a support ticket.", None
+            
+        # --- ШАГ 4: Проверяем баланс (этот шаг остается, т.к. требует другого эндпоинта) ---
         min_matchsticks = self.event_configs.get(event_id, Decimal('3'))
         balance = await self._get_wallet_balance(wallet_address)
         if balance < min_matchsticks:

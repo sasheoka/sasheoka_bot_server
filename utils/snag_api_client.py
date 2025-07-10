@@ -89,16 +89,30 @@ class SnagApiClient:
             logger.exception(f"[{self._client_name}] Unexpected API Error for {endpoint}")
             return {"error": True, "status": "Exception", "message": f"Unexpected error: {e}"}
 
-    async def get_account_by_wallet(self, wallet_address: str) -> Optional[Dict]:
-        params = {'limit': 1, 'walletAddress': wallet_address}
-        return await self._make_request("GET", ACCOUNTS_ENDPOINT, params=params)
-
-    async def get_account_by_social(self, handle_type: str, handle_value: str) -> Optional[Dict]:
-         if handle_type not in ["discordUser", "twitterUser"]:
-             logger.error(f"[{self._client_name}] Unsupported social handle type: {handle_type}")
-             return None
-         params = {'limit': 1, handle_type: handle_value}
-         return await self._make_request("GET", ACCOUNTS_ENDPOINT, params=params)
+    # --- НОВЫЙ УНИФИЦИРОВАННЫЙ МЕТОД ---
+    async def get_user_data(self, 
+                            wallet_address: Optional[str] = None, 
+                            discord_user: Optional[str] = None, 
+                            twitter_user: Optional[str] = None,
+                            user_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        Унифицированный метод для получения данных пользователя по любому основному идентификатору.
+        Использует эндпоинт GET /api/users.
+        """
+        params = {'limit': 1}
+        if wallet_address:
+            params['walletAddress'] = wallet_address
+        elif discord_user:
+            params['discordUser'] = discord_user
+        elif twitter_user:
+            params['twitterUser'] = twitter_user
+        elif user_id:
+            params['userId'] = user_id
+        else:
+            logger.error(f"[{self._client_name}] get_user_data called without any identifier.")
+            return {"error": True, "status": "ClientError", "message": "No identifier provided to get_user_data."}
+        
+        return await self._make_request("GET", GET_USER_ENDPOINT, params=params)
 
     async def get_all_accounts_for_wallet(self, wallet_address: str, limit: int = 100) -> Optional[Dict]:
         params = {'walletAddress': wallet_address, 'limit': limit}

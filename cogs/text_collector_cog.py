@@ -115,20 +115,23 @@ class TextCollectorCog(commands.Cog, name="Text Chat Collector"):
     async def cog_unload(self):
         logger.info(f"Cog '{self.__class__.__name__}' unloaded.")
 
+    # --- ИЗМЕНЕННЫЙ ХЕЛПЕР ---
     async def _fetch_wallet_from_api(self, client, handle: str) -> Optional[str]:
+        """Helper to fetch wallet from a single API client."""
         if not client or not client._api_key:
             client_name = getattr(client, '_client_name', 'Unknown Snag client')
             logger.warning(f"Client {client_name} has no API key. Skipping request for {handle}.")
             return None
             
-        response = await client.get_account_by_social(handle_type="discordUser", handle_value=handle)
-        if response and isinstance(response.get("data"), list) and response["data"]:
-            account_data = response["data"][0]
-            user_info = account_data.get("user")
-            if isinstance(user_info, dict):
-                wallet_address = user_info.get("walletAddress")
-                if wallet_address:
-                    return str(wallet_address).lower()
+        # Используем новый метод get_user_data
+        response = await client.get_user_data(discord_user=handle)
+        
+        # Парсим ответ от get_user_data
+        if response and not response.get("error") and isinstance(response.get("data"), list) and response["data"]:
+            user_data = response["data"][0]
+            wallet_address = user_data.get("walletAddress")
+            if wallet_address:
+                return str(wallet_address).lower()
         return None
 
     async def process_text_collection_request(self, interaction: discord.Interaction, channel_id_str: str, date_str: str, limit_str: Optional[str]):

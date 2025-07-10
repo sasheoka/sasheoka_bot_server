@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
 
-from utils.snag_api_client import SnagApiClient, GET_USER_ENDPOINT
+from utils.snag_api_client import SnagApiClient
 from utils.checks import is_prefix_admin_in_guild
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,7 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             await self.session.close()
             logger.info(f"Closed aiohttp session for {self.__class__.__name__}.")
 
+    # --- ИЗМЕНЕННЫЙ МЕТОД ---
     async def verify_telegram_membership(self, interaction: discord.Interaction):
         if not self.telegram_token or not self.session:
             await interaction.followup.send("⚠️ Telegram verification is not properly configured.", ephemeral=True)
@@ -82,8 +83,18 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             await interaction.followup.send("⚠️ Snag API client is not configured.", ephemeral=True)
             return
 
-        account_data = await snag_client.get_account_by_social("discordUser", discord_handle)
-        if not account_data or not isinstance(account_data.get("data"), list) or not account_data["data"]:
+        # --- ШАГ 1: Идентифицируем пользователя через get_user_data ---
+        user_data_response = await snag_client.get_user_data(discord_user=discord_handle)
+        
+        if not user_data_response or user_data_response.get("error"):
+            await interaction.followup.send(
+                "⚠️ Your Discord account is not linked in the Snag Loyalty System or an API error occurred. "
+                "Please link it at https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social",
+                ephemeral=True
+            )
+            return
+
+        if not isinstance(user_data_response.get("data"), list) or not user_data_response["data"]:
             await interaction.followup.send(
                 "⚠️ Your Discord account is not linked in the Snag Loyalty System. "
                 "Please link it at https://loyalty.campnetwork.xyz/home?editProfile=1&modalTab=social",
@@ -91,33 +102,11 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             )
             return
 
-        user_info = account_data["data"][0].get("user", {})
-        wallet_address = user_info.get("walletAddress")
-        if not wallet_address:
-            await interaction.followup.send(
-                "⚠️ No wallet address linked to your Discord account in the Snag Loyalty System.",
-                ephemeral=True
-            )
-            return
-
-        user_data_response = await snag_client._make_request(
-            method="GET",
-            endpoint=GET_USER_ENDPOINT,
-            params={"walletAddress": wallet_address, "limit": 1}
-        )
-        if not user_data_response or not isinstance(user_data_response.get("data"), list) or not user_data_response["data"]:
-            await interaction.followup.send(
-                "⚠️ Could not retrieve user data from Snag API. Please ensure your account is properly linked.",
-                ephemeral=True
-            )
-            logger.error(f"No user data found for wallet {wallet_address} via /api/users.")
-            return
-
-        user_data = user_data_response["data"][0]
+        # --- ШАГ 2: Извлекаем telegramUserId из полученных данных ---
+        user_object = user_data_response["data"][0]
         telegram_user_id = None
-
-        user_metadata_list = user_data.get("userMetadata")
-        if user_metadata_list and isinstance(user_metadata_list, list) and user_metadata_list:
+        user_metadata_list = user_object.get("userMetadata")
+        if user_metadata_list and isinstance(user_metadata_list, list):
             telegram_user_id = user_metadata_list[0].get("telegramUserId")
 
         if not telegram_user_id:
@@ -128,6 +117,7 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
             )
             return
 
+        # --- ШАГ 3: Проверяем членство в группе Telegram (эта часть остается без изменений) ---
         try:
             async with self.session.get(
                 f"{self.telegram_api_url}/getChatMember",
@@ -147,7 +137,6 @@ class TelegramVerificationCog(commands.Cog, name="Telegram Verification"):
                 if status in ["administrator", "creator", "member"]:
                     await self.grant_channel_access(interaction)
                 else:
-                    # Дополнительная проверка is_member, если статус не соответствует
                     is_member = result["result"].get("is_member", False)
                     if is_member:
                         await self.grant_channel_access(interaction)

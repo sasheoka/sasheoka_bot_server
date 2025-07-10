@@ -100,11 +100,7 @@ class BlockUnblockCog(commands.Cog, name="Block/Unblock User"):
             await interaction.followup.send("⚠️ Snag API client is not configured.", ephemeral=True)
             return
 
-        response = await self.snag_client._make_request(
-            "GET",
-            "/api/users",
-            params={"walletAddress": wallet_address}
-        )
+        response = await self.snag_client.get_user_data(wallet_address=wallet_address)
 
         if not response or response.get("error") or not isinstance(response.get("data"), list) or not response["data"]:
             error_message = response.get("message", "API request failed.") if response else "No response from API."

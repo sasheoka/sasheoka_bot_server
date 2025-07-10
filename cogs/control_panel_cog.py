@@ -362,52 +362,111 @@ class ControlPanelCog(commands.Cog, name="Control Panel"):
             logger.error("Failed to refresh currency map from Main API. Response was invalid or empty.")
             return self._currency_cache
 
-    async def _find_wallet_by_social_api_filter(self, client: SnagApiClient, handle_type: str, handle_value: str) -> Optional[str]: # ... (без изменений) ...
-        if not client or not client._api_key: logger.warning(f"Attempted to use an uninitialized or keyless API client ({getattr(client, '_client_name', 'UnknownClient')}) for social lookup."); return None
-        logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Finding wallet for {handle_type}='{handle_value}'"); account_data_response = await client.get_account_by_social(handle_type, handle_value)
-        if account_data_response and isinstance(account_data_response.get("data"), list) and account_data_response["data"]:
-            account_data = account_data_response["data"][0]; user_info = account_data.get("user"); wallet_address = user_info.get("walletAddress") if isinstance(user_info, dict) else None
-            if wallet_address: logger.info(f"[{getattr(client, '_client_name', '')}] Found wallet: {wallet_address} for {handle_type} {handle_value}"); return wallet_address
-        logger.warning(f"[{getattr(client, '_client_name', '')}] Wallet not found for {handle_type} {handle_value}. Response: {str(account_data_response)[:200]}"); return None
-    
-    async def _find_socials_by_wallet(self, client: SnagApiClient, target_address: str) -> str: # ... (без изменений) ...
-        if not client or not client._api_key: 
-            return "⚙️ API Client instance is not available or keyless."
-        logger.info(f"[{getattr(client, '_client_name', 'SnagClient')}] Finding socials for {target_address}"); account_data_response = await client.get_account_by_wallet(target_address)
-        if not account_data_response: 
-            return "⚙️ Error contacting API or API key/config missing."
-        if not isinstance(account_data_response.get("data"), list) or not account_data_response["data"]: 
-            return f"❌ No account data found for `{target_address}`."
-        account_data = account_data_response["data"][0]; user_info = account_data.get("user", {}); metadata_list = user_info.get("userMetadata", []); display_name = "N/A"; discord_handle = None; twitter_handle = None
-        if isinstance(metadata_list, list) and metadata_list:
+    async def _get_user_object_from_api(self, client: SnagApiClient, identifier_type: str, identifier_value: str) -> Optional[Dict[str, Any]]:
+        """Внутренний хелпер для получения полного объекта пользователя."""
+        if not client or not client._api_key:
+            return None
+
+        kwargs = {identifier_type: identifier_value}
+        response = await client.get_user_data(**kwargs)
+
+        if response and not response.get("error") and isinstance(response.get("data"), list) and response["data"]:
+            return response["data"][0]
+        
+        # Логируем ошибку, если она была
+        if response and response.get("error"):
+            logger.error(f"[{getattr(client, '_client_name', 'SnagClient')}] API error getting user by {identifier_type}={identifier_value}: {response}")
+        
+        return None
+
+    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    async def handle_find_wallet_logic(self, interaction: discord.Interaction, discord_h: Optional[str], twitter_h: Optional[str]):
+        discord_h = discord_h.strip() if discord_h else None
+        twitter_h = twitter_h.strip().lstrip('@') if twitter_h else None
+        
+        if not discord_h and not twitter_h:
+            await interaction.followup.send("Please enter at least one social handle (Discord or Twitter/X).", ephemeral=True)
+            return
+
+        identifier_type = "discord_user" if discord_h else "twitter_user"
+        identifier_value = discord_h or twitter_h
+        
+        if not identifier_value:
+             await interaction.followup.send("Failed to determine social handle for lookup.", ephemeral=True)
+             return
+
+        display_identifier_type = "Discord" if identifier_type == "discord_user" else "Twitter/X"
+        response_header = f"Search results for {display_identifier_type} handle: **`{identifier_value}`**"
+        
+        user_main = await self._get_user_object_from_api(self.snag_client, identifier_type, identifier_value)
+        user_legacy = await self._get_user_object_from_api(self.snag_client_legacy, identifier_type, identifier_value)
+
+        response_lines = []
+        if user_legacy and user_legacy.get("walletAddress"):
+            response_lines.append(f"**Old Loyalty System Wallet:** `{user_legacy['walletAddress']}`")
+        if user_main and user_main.get("walletAddress"):
+            response_lines.append(f"**New Loyalty System Wallet:** `{user_main['walletAddress']}`")
+
+        if not response_lines:
+            final_message = f"{response_header}\n\nCould not find any linked wallets for this handle in either system."
+        else:
+            final_message = f"{response_header}\n\n" + "\n".join(response_lines)
+            
+        await interaction.followup.send(final_message, ephemeral=True)
+
+    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    def _extract_socials_from_user_data(self, user_data: Optional[Dict[str, Any]]) -> str:
+        """Внутренний хелпер для форматирования соцсетей из объекта пользователя."""
+        if not user_data:
+            return "Could not be fetched (API client unavailable or error)."
+
+        wallet_address = user_data.get("walletAddress")
+        if not wallet_address:
+            return "No user data found."
+
+        metadata_list = user_data.get("userMetadata", [])
+        discord_handle = None
+        twitter_handle = None
+        display_name = ""
+
+        if metadata_list and isinstance(metadata_list, list):
             meta = metadata_list[0]
-            if isinstance(meta, dict): 
-                display_name = meta.get("displayName", "N/A")
-                discord_handle = meta.get("discordUser")
-                twitter_handle = meta.get("twitterUser")
+            display_name = meta.get("displayName") or ""
+            discord_handle = meta.get("discordUser")
+            twitter_handle = meta.get("twitterUser")
 
-        # Обрабатываем displayName: если оно пустое или содержит только пробелы, пишем "Not set"
-        if display_name and display_name.strip():
-            display_name_formatted = f"`{display_name.strip()}`"
-        else:
-            display_name_formatted = "Not set"  # Без кавычек
-
-        # Обрабатываем discordUser
-        if discord_handle and discord_handle.strip():
-            discord_handle_formatted = f"`{discord_handle.strip()}`"
-        else:
-            discord_handle_formatted = "Not linked" # Без кавычек
-
-        # Ссылка на Twitter остается как есть, она работает правильно
+        display_name_formatted = f"`{display_name.strip()}`" if display_name and display_name.strip() else "Not set"
+        discord_handle_formatted = f"`{discord_handle.strip()}`" if discord_handle and discord_handle.strip() else "Not linked"
+        
         twitter_handle_display = "`Not linked`"
         if twitter_handle:
             clean_handle = twitter_handle.lstrip('@')
             twitter_handle_display = f"[@{clean_handle}](<https://twitter.com/{clean_handle}>)"
         
-        # Собираем финальный ответ
         return (f"**Display Name:** {display_name_formatted}\n"
                 f"**Discord:** {discord_handle_formatted}\n"
                 f"**Twitter/X:** {twitter_handle_display}")
+
+    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    async def handle_find_socials_logic(self, interaction: discord.Interaction, address_val: str):
+        target_address = address_val.strip().lower()
+        if not EVM_ADDRESS_PATTERN.match(target_address):
+            await interaction.followup.send("⚠️ Invalid EVM address format.", ephemeral=True)
+            return
+            
+        logger.info(f"User {interaction.user.id} requested socials for wallet: {target_address}")
+
+        user_main = await self._get_user_object_from_api(self.snag_client, "wallet_address", target_address)
+        user_legacy = await self._get_user_object_from_api(self.snag_client_legacy, "wallet_address", target_address)
+        
+        socials_text_main = self._extract_socials_from_user_data(user_main)
+        socials_text_legacy = self._extract_socials_from_user_data(user_legacy)
+
+        full_response = (f"**--- Old Loyalty System ---**\n{socials_text_legacy}\n\n"
+                         f"**--- New Loyalty System ---**\n{socials_text_main}").strip()
+        
+        if len(full_response) > 1950: full_response = full_response[:1950] + "..."
+        await interaction.followup.send(full_response, ephemeral=True)
         
     async def _get_all_wallet_balances_from_client(self, client: SnagApiClient, wallet_address: str, system_name: str) -> str: # ... (без изменений) ...
         if not client or not client._api_key: return f"⚙️ API Client for **{system_name}** is not available or keyless."

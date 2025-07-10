@@ -66,15 +66,13 @@ class BlockCheckerCog(commands.Cog, name="Block Checker"):
         logger.info(f"User {interaction.user.name} ({interaction.user.id}) is checking block status for wallet: {wallet_address}")
 
         # Используем универсальный метод _make_request для эндпоинта /api/users
-        response = await self.snag_client._make_request(
-            "GET",
-            GET_USER_ENDPOINT,
-            params={"walletAddress": wallet_address}
-        )
+        response = await self.snag_client.get_user_data(wallet_address=wallet_address)
 
         if not response or response.get("error"):
             error_message = response.get("message", "API request failed.") if response else "No response from API."
-            await interaction.followup.send(f"❌ API Error: `{error_message}`", ephemeral=True)
+            # Добавим статус, если он есть
+            status = response.get("status", "N/A") if response else "N/A"
+            await interaction.followup.send(f"❌ API Error (Status: {status}): `{error_message}`", ephemeral=True)
             return
 
         if not isinstance(response.get("data"), list) or not response["data"]:
