@@ -73,10 +73,16 @@ class SnagApiClient:
                 response_text = await response.text()
                 log_level = logging.INFO if response.ok else logging.ERROR
                 logger.log(log_level, f"[{self._client_name}] API Resp {method} {url.split('?')[0]}: Status {response.status} | Resp text (first 300): {response_text[:300]}")
-                response.raise_for_status() 
-                if response.status == 204:
-                    return {"success": True, "status": 204, "message": "Operation successful, no content returned."}
-                return json.loads(response_text) if response_text else {}
+                response.raise_for_status() # Вызовет ошибку для статусов 4xx/5xx
+
+                # Обрабатываем ВСЕ успешные ответы с пустым телом как успех.
+                # Это включает и 204 No Content, и 200 OK с пустым телом.
+                if not response_text.strip(): 
+                    logger.info(f"[{self._client_name}] Handled successful response (Status: {response.status}) with empty body.")
+                    return {"success": True, "status": response.status, "message": "Operation successful, no content returned."}
+
+                # Теперь мы уверены, что response_text не пустой, можно декодировать.
+                return json.loads(response_text)
         except json.JSONDecodeError:
              status_code = response.status if 'response' in locals() and hasattr(response, 'status') else 'N/A'
              logger.error(f"[{self._client_name}] JSON Decode Error for {endpoint}. Status: {status_code}. Raw Text (first 200): {response_text[:200]}...")
