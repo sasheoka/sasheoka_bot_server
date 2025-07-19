@@ -144,12 +144,13 @@ class TicketInvestigatorCog(commands.Cog, name="Ticket Investigator"):
 
         # Пытаемся получить создателя из пермишенов канала (для некоторых ботов-тикетов)
         # Если не получится, будем искать по автору первого сообщения
-        if ticket_channel.owner_id:
+        if isinstance(ticket_channel, discord.Thread) and ticket_channel.owner_id:
              ticket_creator = interaction.guild.get_member(ticket_channel.owner_id)
 
+        # Сканируем историю, чтобы найти создателя (если не нашли выше) и адрес кошелька
         async for message in ticket_channel.history(limit=15, oldest_first=True):
             if not message.author.bot:
-                # Нашли первое сообщение от пользователя, он и есть создатель
+                # Если создатель еще не определен, то первый автор-не-бот и есть создатель
                 if not ticket_creator:
                     ticket_creator = message.author
                 
@@ -157,7 +158,9 @@ class TicketInvestigatorCog(commands.Cog, name="Ticket Investigator"):
                 match = EVM_ADDRESS_PATTERN.search(message.content)
                 if match:
                     wallet_address = match.group(0)
-                    break # Нашли адрес, выходим из цикла
+                    # Если нашли и адрес, и создателя, можно выйти из цикла
+                    if ticket_creator:
+                        break # Нашли адрес, выходим из цикла
 
         if not wallet_address:
             await interaction.followup.send(f"❌ Could not find a valid EVM wallet address in the first 15 messages of {ticket_channel.mention}.", ephemeral=True)
