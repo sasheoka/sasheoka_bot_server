@@ -5,6 +5,7 @@ from discord import app_commands
 import logging
 import re
 import os
+import asyncio
 from typing import Optional, Dict, Any
 
 from utils.snag_api_client import SnagApiClient
@@ -64,19 +65,27 @@ class InvestigationActionView(discord.ui.View):
             await interaction.followup.send("❌ Cannot ban: User who created the ticket is no longer on the server.", ephemeral=True)
             self.stop()
             return
+        
+        TICKET_CLOSE_COMMAND = "/close"
             
         try:
+            # --- ИЗМЕНЕННЫЙ ПОРЯДОК ДЕЙСТВИЙ ---
+
             # 1. Отправить сообщение в тикет
             await self.ticket_channel.send(BAN_MESSAGE)
             logger.info(f"Sent ban message to ticket {self.ticket_channel.name} ({self.ticket_channel.id}).")
             
-            # 2. Забанить пользователя
+            # 2. Закрыть тикет с помощью команды другого бота
+            # Бот отправит команду в чат, и другой бот на нее среагирует
+            await self.ticket_channel.send(TICKET_CLOSE_COMMAND)
+            logger.info(f"Sent close command '{TICKET_CLOSE_COMMAND}' to ticket {self.ticket_channel.id}.")
+
+            # Даем боту-тикет-менеджеру пару секунд на обработку закрытия и сохранение логов
+            await asyncio.sleep(2) 
+
+            # 3. Забанить пользователя
             await self.ticket_creator.ban(reason="Snag block (handled via Ticket Investigator)")
             logger.info(f"Banned user {self.ticket_creator.name} ({self.ticket_creator.id}).")
-
-            # 3. Закрыть/удалить тикет
-            await self.ticket_channel.delete(reason="Ticket resolved, user banned.")
-            logger.info(f"Deleted ticket channel {self.ticket_channel.id}.")
 
             await interaction.edit_original_response(content="✅ **Success:** User has been banned and the ticket is closed.", view=None, embed=None)
 
